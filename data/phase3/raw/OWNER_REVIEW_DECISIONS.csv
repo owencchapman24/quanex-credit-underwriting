@@ -1,0 +1,34 @@
+decision_id,record_type,record_id,decision_status,owner_review_status,approved_treatment,remaining_limitation,review_context
+ORD-001,assumption,ASM-001,owner_reviewed_range,owner_reviewed,Underlying volume -2% to +1% calibration range,Not a period-by-period forecast,Governing Work Phase 3 owner-review revision
+ORD-002,assumption,ASM-002,owner_reviewed_range,owner_reviewed,Price/mix 0% to +1% calibration range,Not a period-by-period forecast,Governing Work Phase 3 owner-review revision
+ORD-003,assumption,ASM-003,owner_reviewed_range,owner_reviewed,Gross margin 26% to 28% as the primary gross-profit driver,Operating costs must generate EBITDA,Governing Work Phase 3 owner-review revision
+ORD-004,assumption,ASM-004,owner_reviewed_methodology,owner_reviewed,Lender-normalized EBITDA margin 12% to 13% as a validation band,Must not override the operating build,Governing Work Phase 3 owner-review revision
+ORD-005,assumption,ASM-005,owner_reviewed_range,owner_reviewed,DSO 40 to 43 days,Periodization remains for forecast construction,Governing Work Phase 3 owner-review revision
+ORD-006,assumption,ASM-006,owner_reviewed_range,owner_reviewed,DIO 70 to 75 days,Periodization remains for forecast construction,Governing Work Phase 3 owner-review revision
+ORD-007,assumption,ASM-007,owner_reviewed_range,owner_reviewed,Total capex 3% to 4% of revenue,"Maintenance, integration and expansion split remains unresolved",Governing Work Phase 3 owner-review revision
+ORD-008,assumption,ASM-008,owner_reviewed_range,owner_reviewed,Zero base credit for incremental unrealized synergies,Verified future realization may be reconsidered,Governing Work Phase 3 owner-review revision
+ORD-009,assumption,ASM-009,owner_reviewed_range,owner_reviewed,At least $0.7m of restructuring cash,Upper bound remains pending information,Governing Work Phase 3 owner-review revision
+ORD-010,assumption,ASM-010,owner_reviewed_range,owner_reviewed,Repurchases $0m to $10m as a financial-policy range,Not fixed; financing restrictions must be established in Phase 4,Governing Work Phase 3 owner-review revision
+ORD-011,assumption,ASM-011,owner_reviewed_range,owner_reviewed,Dividends $14m to $15m,Future Board action remains uncommitted,Governing Work Phase 3 owner-review revision
+ORD-012,assumption,ASM-012,owner_reviewed_methodology,owner_reviewed,Zero-basis-point reference relative to the Phase 4 closing rate,Not a zero interest-rate assumption,Governing Work Phase 3 owner-review revision
+ORD-013,assumption,ASM-013,pending_information,owner_reviewed,No numerical FX base credit,Exposure and hedge schedules remain unavailable,Governing Work Phase 3 owner-review revision
+ORD-014,assumption,ASM-014,owner_reviewed_methodology,owner_reviewed,Qualitative cash-flow reporting limitation and monitoring item,Not a numeric forecast plug,Governing Work Phase 3 owner-review revision
+ORD-015,assumption,ASM-015,pending_information,owner_reviewed,Accounts-payable forecast method to be resolved in Phase 5,DPO is unavailable because purchases are not disclosed,Governing Work Phase 3 owner-review revision
+ORD-016,assumption,ASM-016,pending_information,owner_reviewed,Other operating working-capital method to be resolved in Phase 5,Must not become a funding plug or zero,Governing Work Phase 3 owner-review revision
+ORD-017,scenario,SCN-001,owner_reviewed_range,owner_reviewed,Moderate/severe volume calibration,No scenario has been run,Governing Work Phase 3 owner-review revision
+ORD-018,scenario,SCN-002,owner_reviewed_range,owner_reviewed,Moderate/severe gross-margin calibration,Includes volume-related fixed-cost deleverage,Governing Work Phase 3 owner-review revision
+ORD-019,scenario,SCN-003,owner_reviewed_range,owner_reviewed,Moderate/severe DSO calibration,No scenario has been run,Governing Work Phase 3 owner-review revision
+ORD-020,scenario,SCN-004,owner_reviewed_range,owner_reviewed,Moderate/severe DIO calibration,No scenario has been run,Governing Work Phase 3 owner-review revision
+ORD-021,scenario,SCN-005,owner_reviewed_range,owner_reviewed,Moderate/severe execution-delay calibration,Margin effect remains in SCN-002,Governing Work Phase 3 owner-review revision
+ORD-022,scenario,SCN-006,owner_reviewed_range,owner_reviewed,Moderate/severe funding sensitivity,Phase 4 closing rate and hedge exposure still control,Governing Work Phase 3 owner-review revision
+ORD-023,scenario,SCN-007,owner_reviewed_methodology,owner_reviewed,Both unmitigated cases retain selected base distributions,Distribution reductions occur only in mitigated cases,Governing Work Phase 3 owner-review revision
+ORD-024,scenario,SCN-008,pending_information,owner_reviewed,Capex stress method preserves maintenance and safety floor,Project-level split is unavailable,Governing Work Phase 3 owner-review revision
+ORD-025,scenario,SCN-009,pending_information,owner_reviewed,Payables and other operating working-capital stress method,Numeric ranges await a defensible Phase 5 forecast method,Governing Work Phase 3 owner-review revision
+ORD-026,mitigation,MIT-001,owner_reviewed_methodology,owner_reviewed,Owner-reviewed mitigation classification,Feasibility limits and separate-case treatment remain,Governing Work Phase 3 owner-review revision
+ORD-027,mitigation,MIT-002,owner_reviewed_methodology,owner_reviewed,Owner-reviewed mitigation classification,Feasibility limits and separate-case treatment remain,Governing Work Phase 3 owner-review revision
+ORD-028,mitigation,MIT-003,owner_reviewed_methodology,owner_reviewed,Owner-reviewed mitigation classification,Feasibility limits and separate-case treatment remain,Governing Work Phase 3 owner-review revision
+ORD-029,mitigation,MIT-004,owner_reviewed_methodology,owner_reviewed,Owner-reviewed mitigation classification,Feasibility limits and separate-case treatment remain,Governing Work Phase 3 owner-review revision
+ORD-030,mitigation,MIT-005,owner_reviewed_methodology,owner_reviewed,Owner-reviewed mitigation classification,Feasibility limits and separate-case treatment remain,Governing Work Phase 3 owner-review revision
+ORD-031,mitigation,MIT-006,owner_reviewed_methodology,owner_reviewed,Owner-reviewed mitigation classification,Feasibility limits and separate-case treatment remain,Governing Work Phase 3 owner-review revision
+ORD-032,mitigation,MIT-007,owner_reviewed_methodology,owner_reviewed,Owner-reviewed mitigation classification,Feasibility limits and separate-case treatment remain,Governing Work Phase 3 owner-review revision
+ORD-033,mitigation,MIT-008,owner_reviewed_methodology,owner_reviewed,Owner-reviewed mitigation classification,Feasibility limits and separate-case treatment remain,Governing Work Phase 3 owner-review revision

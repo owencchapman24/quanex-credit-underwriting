@@ -24,7 +24,19 @@ Phase 3 adds a cutoff-controlled borrower and industry evidence layer, an
 eight-quarter operating/cash trend, and owner-reviewed base/moderate/severe
 calibration ranges. The reviewed ranges are not period forecasts; FX and
 payables/other-operating-working-capital methods remain pending, and no scenario
-has been run.
+has been run. Phase 4 adds the debt-instrument and legal-structure registers,
+low/reference/high projected-closing sensitivities, sources and uses,
+principal-only amortization schedules, a provisional term sheet, financing-
+alternative economics, closing conditions, and a Phase 5 opening-input
+specification. The owner-reviewed low/reference/pressure cases and selected
+provisional structure are approved only for Phase 5 testing; actual payoff,
+cash, fee, interest, hedge, LC, legal and commitment evidence remains pending.
+Corrected maturity outputs separate installments, post-installment balloons,
+maturity-date funded principal, Quanex fiscal-year payments and rolling-12-month
+payments. Phase 4 retains the existing facilities and a limited amendment or
+extension as live alternatives and does not conclude that refinancing is
+economically preferable. No actual January 2026 information or integrated
+forecast is used.
 
 - [Case charter](docs/phase-0/CASE_CHARTER.md)
 - [Existing financing and refinancing logic](docs/phase-0/EXISTING_FINANCING.md)
@@ -42,6 +54,11 @@ has been run.
 - [Phase 3 borrower and industry driver brief](docs/phase-3/BORROWER_INDUSTRY_BRIEF.md)
 - [Phase 4 bounded handoff](docs/phase-3/PHASE4_HANDOFF.md)
 - [Phase 3 source ledger](docs/phase-3/SOURCE_LEDGER.csv)
+- [Phase 4 methodology and closing cases](docs/phase-4/METHODOLOGY.md)
+- [Phase 4 provisional term sheet](docs/phase-4/PROVISIONAL_TERM_SHEET.md)
+- [Phase 4 public legal-structure summary](docs/phase-4/LEGAL_STRUCTURE_SUMMARY.md)
+- [Phase 5 opening-input handoff](docs/phase-4/PHASE5_HANDOFF.md)
+- [Phase 4 source ledger](docs/phase-4/SOURCE_LEDGER.csv)
 
 Run the Phase 0 controls with:
 
@@ -79,3 +96,16 @@ python -m unittest discover -s tests -v
 Phase 3 uses only the Python standard library and performs no live network
 access. It preserves owner-reviewed calibration decisions but does not construct
 projected statements, run scenarios, size a facility, or begin Phase 4.
+
+Run the Phase 4 workflow and all decision-relevant tests with:
+
+```powershell
+python scripts/phase4.py all
+python -m unittest discover -s tests -v
+```
+
+Phase 4 also uses only the Python standard library and performs no live network
+access. It does not finalize the refinancing, build projected operating
+statements, integrate cash interest, establish final debt capacity or covenants,
+or begin Phase 5. Owner-reviewed leverage, coverage and liquidity levels are
+initial analytical test thresholds only; Phase 7 retains final covenant design.

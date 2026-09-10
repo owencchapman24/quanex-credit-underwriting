@@ -33,6 +33,7 @@ PHASE2_METRICS = ROOT / "data" / "phase2" / "processed" / "historical_credit_met
 CUTOFF = date(2025, 12, 15)
 ACCESS_DATE = "2026-09-09"
 APPROVED_PHASE2_COMMIT = "4432dcbdbfaa0aa828420af3287262e355c451d0"
+APPROVED_PHASE3_COMMIT = "f382b0007396a6a4e93bd17ac66b5326b35dbe83"
 QUARTERS = tuple((fy, q) for fy in ("FY2024", "FY2025") for q in ("Q1", "Q2", "Q3", "Q4"))
 
 SOURCE_FIELDS = (
@@ -924,6 +925,38 @@ def output_paths() -> list[Path]:
     ]
 
 
+PROTECTED_PHASE3_PATHS = tuple(
+    str(path.relative_to(ROOT)).replace("\\", "/") for path in output_paths()
+)
+
+
+def protected_phase3_changes() -> list[str]:
+    """Return protected Phase 3 artifacts changed from the approved commit."""
+    missing = [path for path in PROTECTED_PHASE3_PATHS if not (ROOT / path).is_file()]
+    result = subprocess.run(
+        ["git", "diff", "--name-only", APPROVED_PHASE3_COMMIT, "--", *PROTECTED_PHASE3_PATHS],
+        cwd=ROOT, capture_output=True, text=True, check=True,
+    )
+    changed = [line.replace("\\", "/") for line in result.stdout.splitlines() if line]
+    return sorted(set(missing + changed))
+
+
+def validate_protected_phase3_artifacts(changed_paths: Iterable[str] | None = None) -> None:
+    """Reject later-phase alteration of approved Phase 3 analytical artifacts.
+
+    A descendant commit proves ancestry only. Approved Phase 3 outputs remain
+    byte/content protected relative to the approved Phase 3 commit. The
+    descendant-aware validator implementation itself may be maintained, but it
+    is intentionally outside this protected analytical-output list.
+    """
+    changed = list(protected_phase3_changes() if changed_paths is None else changed_paths)
+    unauthorized = sorted(set(changed) & set(PROTECTED_PHASE3_PATHS))
+    if unauthorized:
+        raise Phase3Error(
+            "Protected Phase 3 artifact changed after approval: " + ", ".join(unauthorized)
+        )
+
+
 def fingerprints() -> dict[str, str]:
     return {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
             for path in output_paths()}
@@ -1160,8 +1193,18 @@ def validate() -> dict[str, int]:
                               capture_output=True, text=True).stdout.strip()
     except (OSError, subprocess.CalledProcessError) as exc:
         raise Phase3Error(f"Cannot verify HEAD: {exc}") from exc
+    # During uncommitted Phase 3 development, HEAD is the approved Phase 2
+    # parent. After Phase 3 is approved and committed, the validator must remain
+    # reusable from that commit and its descendants. The immutable starting
+    # checkpoint above continues to prove the original clean Phase 2 baseline.
     if head != APPROVED_PHASE2_COMMIT:
-        raise Phase3Error(f"HEAD changed during Phase 3: {head}")
+        descendant = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", APPROVED_PHASE3_COMMIT, head],
+            cwd=ROOT, capture_output=True, text=True,
+        )
+        if descendant.returncode != 0:
+            raise Phase3Error(f"HEAD is outside the approved Phase 3 lineage: {head}")
+    validate_protected_phase3_artifacts()
 
     expected_evidence = evidence_seed_rows()
     expected_sources = source_seed_rows()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import subprocess
 import unittest
 from datetime import date
 from decimal import Decimal
@@ -622,10 +623,14 @@ class Phase5ValidationTests(unittest.TestCase):
         last = self.operating[-1]
         self.assertLess(Decimal(last["lender_base_ebitda_margin_percent"]), Decimal("12"))
 
-    def test_66_phase6_not_started(self) -> None:
-        self.assertFalse((ROOT / "scripts" / "phase6.py").exists())
-        self.assertFalse((ROOT / "data" / "phase6").exists())
-        self.assertFalse((ROOT / "docs" / "phase-6").exists())
+    def test_66_phase6_not_embedded_in_approved_phase5_commit(self) -> None:
+        tree = subprocess.run(
+            ["git", "ls-tree", "-r", "--name-only", phase5.APPROVED_PHASE5_COMMIT],
+            cwd=ROOT, text=True, capture_output=True, check=True,
+        ).stdout.splitlines()
+        self.assertFalse(any(path == "scripts/phase6.py" for path in tree))
+        self.assertFalse(any(path.startswith("data/phase6/") for path in tree))
+        self.assertFalse(any(path.startswith("docs/phase-6/") for path in tree))
 
 
 if __name__ == "__main__":

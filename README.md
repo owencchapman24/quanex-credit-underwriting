@@ -65,7 +65,27 @@ operating measures are separately labeled. Both financing paths retain an
 unsupported maturity funding gap when no future refinancing proceeds are
 assumed; this is a refinancing-dependency diagnostic, not a forecast default
 conclusion. Formal covenant compliance remains not determinable, and Phase 6
-has not started.
+preserves that limitation.
+
+Phase 6 adds borrower-specific moderate and severe downside cases, dated
+distribution mitigations, monthly liquidity and endogenous debt/interest paths,
+quarterly stress through each maturity, analytical warning tests, waiver and
+no-waiver drawability conventions, chronological first-distress events,
+bounded reverse stress, and decision-relevant sensitivity grids. Exact shock
+points, recovery paths, equal/adverse monthly timing conventions, the two dated
+capital-allocation mitigations, and the proposed no-waiver convention are
+`owner_reviewed_for_phase6_testing`; they are not management forecasts, final
+underwriting assumptions, contractual conclusions, final loan terms, or
+promised management actions. The headline revolver metric includes opening
+exposure, while subsequent period-end peak usage remains separately reported.
+Draw events mean incremental post-closing draws. Mandatory-payment failure
+excludes missed dividends and repurchases, and maturity shortfalls remain a
+separate classification. Mitigation credit uses actual avoided payments rather
+than scheduled policy reductions. Equal-versus-adverse timing sensitivity makes
+the conditional nature of exact distress dates explicit. Formal covenant
+compliance remains not determinable, book-cash net leverage remains a
+diagnostic, all modeled structures retain an unsupported maturity balloon
+without assumed refinancing, and Phase 7 has not started.
 
 - [Case charter](docs/phase-0/CASE_CHARTER.md)
 - [Existing financing and refinancing logic](docs/phase-0/EXISTING_FINANCING.md)
@@ -93,6 +113,11 @@ has not started.
 - [Phase 5 financing comparison](docs/phase-5/FINANCING_COMPARISON.md)
 - [Phase 6 evidence-driven handoff](docs/phase-5/PHASE6_HANDOFF.md)
 - [Phase 5 source ledger](docs/phase-5/SOURCE_LEDGER.csv)
+- [Phase 6 methodology](docs/phase-6/METHODOLOGY.md)
+- [Phase 6 downside analysis](docs/phase-6/DOWNSIDE_ANALYSIS.md)
+- [Phase 6 liquidity and reverse stress](docs/phase-6/LIQUIDITY_AND_REVERSE_STRESS.md)
+- [Phase 7 bounded handoff](docs/phase-6/PHASE7_HANDOFF.md)
+- [Phase 6 source ledger](docs/phase-6/SOURCE_LEDGER.csv)
 
 Run the Phase 0 controls with:
 
@@ -155,3 +180,15 @@ Phase 5 uses only the Python standard library and performs no live network
 access. It does not run downside cases, establish formal covenant compliance,
 finalize debt capacity, or begin Phase 6. The proposed structure and its cash
 sweep remain provisional public-information modeling constructs.
+
+Run the Phase 6 workflow and all decision-relevant tests with:
+
+```powershell
+python scripts/phase6.py all
+python -m unittest discover -s tests -v
+```
+
+Phase 6 uses only the Python standard library and performs no live network
+access. It does not finalize the facility, amortization, covenants, refinancing,
+waiver, recovery, risk grade, committee recommendation, Excel workbook, credit
+memo, or begin Phase 7.

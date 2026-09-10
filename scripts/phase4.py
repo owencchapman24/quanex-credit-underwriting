@@ -1573,13 +1573,16 @@ def validate_changed_paths() -> None:
             )
     allowed_exact = {
         "README.md", "scripts/phase3.py", "scripts/phase4.py", "scripts/phase5.py",
-        "tests/test_phase4.py", "tests/test_phase5.py",
+        "scripts/phase6.py", "tests/test_phase4.py", "tests/test_phase5.py",
+        "tests/test_phase6.py",
     }
     unexpected = [path for path in changed_paths()
                   if path not in allowed_exact and not path.startswith("data/phase4/")
                   and not path.startswith("docs/phase-4/")
                   and not path.startswith("data/phase5/")
-                  and not path.startswith("docs/phase-5/")]
+                  and not path.startswith("docs/phase-5/")
+                  and not path.startswith("data/phase6/")
+                  and not path.startswith("docs/phase-6/")]
     if unexpected:
         raise Phase4Error(f"Unexpected changed paths: {', '.join(unexpected)}")
 

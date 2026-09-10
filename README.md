@@ -38,6 +38,35 @@ extension as live alternatives and does not conclude that refinancing is
 economically preferable. No actual January 2026 information or integrated
 forecast is used.
 
+Phase 5 adds an integrated quarterly base case from FY2026 through January 31,
+2031, with monthly liquidity detail for the first 24 months and separate
+proposed-refinancing and existing-facility debt paths. Revenue, margin, working
+capital, capital spending, taxes, distributions, interest, amortization,
+revolver activity, cash sweeps, and maturity funding are linked through one
+deterministic model. The project owner has reviewed the identified operating,
+working-capital, distribution, pricing-proxy, timing and sweep assumptions for
+Phase 5 testing only; they are not management forecasts, market quotes, final
+terms or credit approval. The hypothetical refinancing closes immediately
+before the January 31 existing Term A installment, and both alternatives are
+reconciled to February 1, 2026 at 00:00. The existing path funds the installment
+and accrued interest through its opening revolver, while the proposed path
+retains the approved Phase 4 payoff and counts accrued interest and USD 10m of
+fees once.
+
+Mandatory interest, retained obligations and scheduled principal precede
+planned dividends and repurchases. Distribution-funded revolver needs and the
+proposed debt-funded-buyback restriction are explicit; no distribution
+reduction is assumed. The main financing comparison uses the common period
+through July 31, 2029 and shows the proposed August 1, 2029-January 31, 2031 tail
+separately. Existing contractual SOFR/RFR margins are modeled at 200-275 bps;
+the applicable leverage tier is not determinable, and 6.57% is used only as a
+rate-neutral comparison case. FY2026 Q1, post-closing Q2-Q4 and full-year
+operating measures are separately labeled. Both financing paths retain an
+unsupported maturity funding gap when no future refinancing proceeds are
+assumed; this is a refinancing-dependency diagnostic, not a forecast default
+conclusion. Formal covenant compliance remains not determinable, and Phase 6
+has not started.
+
 - [Case charter](docs/phase-0/CASE_CHARTER.md)
 - [Existing financing and refinancing logic](docs/phase-0/EXISTING_FINANCING.md)
 - [Evidence inventory](docs/phase-0/EVIDENCE_INVENTORY.csv)
@@ -59,6 +88,11 @@ forecast is used.
 - [Phase 4 public legal-structure summary](docs/phase-4/LEGAL_STRUCTURE_SUMMARY.md)
 - [Phase 5 opening-input handoff](docs/phase-4/PHASE5_HANDOFF.md)
 - [Phase 4 source ledger](docs/phase-4/SOURCE_LEDGER.csv)
+- [Phase 5 methodology](docs/phase-5/METHODOLOGY.md)
+- [Phase 5 integrated base-case analysis](docs/phase-5/BASE_CASE_ANALYSIS.md)
+- [Phase 5 financing comparison](docs/phase-5/FINANCING_COMPARISON.md)
+- [Phase 6 evidence-driven handoff](docs/phase-5/PHASE6_HANDOFF.md)
+- [Phase 5 source ledger](docs/phase-5/SOURCE_LEDGER.csv)
 
 Run the Phase 0 controls with:
 
@@ -109,3 +143,15 @@ access. It does not finalize the refinancing, build projected operating
 statements, integrate cash interest, establish final debt capacity or covenants,
 or begin Phase 5. Owner-reviewed leverage, coverage and liquidity levels are
 initial analytical test thresholds only; Phase 7 retains final covenant design.
+
+Run the Phase 5 workflow and all decision-relevant tests with:
+
+```powershell
+python scripts/phase5.py all
+python -m unittest discover -s tests -v
+```
+
+Phase 5 uses only the Python standard library and performs no live network
+access. It does not run downside cases, establish formal covenant compliance,
+finalize debt capacity, or begin Phase 6. The proposed structure and its cash
+sweep remain provisional public-information modeling constructs.

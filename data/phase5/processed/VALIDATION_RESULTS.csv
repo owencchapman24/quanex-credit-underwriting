@@ -1,0 +1,57 @@
+validation_id,category,test_name,status,observed_value,expected_value_or_rule,materiality_tolerance,notes
+VR-001,lineage,approved_phase4_checkpoint,PASS,8ed5b5c320a64fd0da9ba54ecd84e5ca5692158a,8ed5b5c320a64fd0da9ba54ecd84e5ca5692158a,0.000001,Live remote was verified before editing and recorded in the checkpoint.
+VR-002,governance,owner_reviewed_phase5_testing_assumptions,PASS,25,25,0.000001,"Testing approval is not a management forecast, market quote, final term or credit approval."
+VR-003,transaction,same_point_opening_timestamp,PASS,2026-02-01_00:00,single post-action comparison timestamp,0.000001,
+VR-004,transaction,january_installment_counted_once,PASS,6.25;term=462.5;revolver=207.39771875,installment reduces term once and is funded once in existing revolver,0.000001,
+VR-005,transaction,accrued_interest_counted_once_each_path,PASS,3.64771875/3.64771875,one pre-February economic use in each path,0.000001,
+VR-006,transaction,refinancing_fee_counted_once,PASS,0/10,proposed Phase 4 fee use once; no post-closing duplicate,0.000001,
+VR-007,transaction,opening_debt_difference_reconciled,PASS,prior=19.89771875;reconciled=10,9.89771875 timing/cash-use correction plus 10 fees,0.000001,
+VR-008,operating,quarterly_period_coverage,PASS,21,21 quarters from FY2026 Q1 through FY2031 Q1,0.000001,
+VR-009,operating,full_year_and_partial_year_aggregation,PASS,FY2026:4;FY2027:4;FY2028:4;FY2029:4;FY2030:4;FY2031:1,four quarters FY2026-FY2030; one quarter FY2031,0.000001,
+VR-010,operating,revenue_driver_calculation,PASS,formula tested on every quarter,prior-year quarter x volume x price/mix,0.000001,
+VR-011,operating,gross_margin_calculation,PASS,formula tested on every quarter,revenue plus negative COGS equals gross profit,0.000001,
+VR-012,operating,ebitda_operating_build,PASS,formula tested on every quarter,gross profit plus cash operating expenses,0.000001,
+VR-013,working_capital,working_capital_not_zero_default,PASS,all AP and other operating balances positive,no zero defaults,0.000001,
+VR-014,working_capital,dpo_remains_not_determinable,PASS,no DPO field or output,AP/cost-of-sales proxy kept separate,0.000001,
+VR-015,cash_flow,cfads_bridge,PASS,formula tested on every quarter,"EBITDA less taxes, capex, NWC use and other necessary uses",0.000001,
+VR-016,cash_flow,cash_tax_and_capex_signs,PASS,all non-positive,cash uses must not be positive,0.000001,
+VR-017,cash_flow,no_duplicate_acquisition_or_adjustment_addbacks,PASS,none,forecast operating build contains no separate acquisition or EBITDA addback,0.000001,
+VR-018,timing,monthly_first_24_months,PASS,48,24 proposed plus 24 existing monthly rows,0.000001,
+VR-019,timing,monthly_quarterly_operating_aggregation,PASS,all proposed post-closing quarters,three monthly allocations equal governing quarter,0.000001,
+VR-020,debt,cash_roll_forward,PASS,formula tested on every month,opening cash plus flows and financing actions equals ending cash,0.000001,
+VR-021,cash_flow,mandatory_debt_service_precedes_distributions,PASS,"interest, retained payments and scheduled principal before distributions",economic priority preserved in every month,0.000001,
+VR-022,cash_flow,distribution_draw_attribution,PASS,formula tested on every month,distribution-caused draws kept separate from mandatory debt funding,0.000001,
+VR-023,cash_flow,planned_distributions_not_silently_mitigated,PASS,14.5 annual dividends;5 annual repurchases,unmitigated policy retained,0.000001,
+VR-024,cash_flow,distribution_compliance_flags_visible,PASS,explicit flags and suspension/funding amount,no fully compliant claim where a debt-funded buyback exists,0.000001,
+VR-025,debt,term_roll_forward,PASS,formula tested on every month,"opening less scheduled, sweep and maturity cash payment",0.000001,
+VR-026,debt,revolver_roll_forward,PASS,formula tested on every month,opening plus draws less repayments and maturity cash payment,0.000001,
+VR-027,debt,interest_timing_and_sign,PASS,non-positive cash use; converged,average monthly debt with controlled revolver iteration,0.000001,
+VR-028,debt,quarterly_amortization_reference,PASS,325,quarterly payment is 16.25 until maturity or earlier payoff,0.000001,
+VR-029,debt,existing_amortization,PASS,87.5,6.25 on modeled quarter ends through July 2029,0.000001,
+VR-030,debt,annual_sweep_timing_and_revolver_priority,PASS,all sweeps occur in October after revolver repayment with at least $50m analytical liquidity,annual October test; revolver paid first and liquidity safeguard retained,0.000001,
+VR-031,liquidity,cash_floor_or_visible_failure,PASS,all months,floor maintained or shortfall explicitly reported,0.000001,
+VR-032,liquidity,commitment_limit_or_visible_failure,PASS,all months,draw plus LC within commitment or breach reported,0.000001,
+VR-033,liquidity,letters_of_credit_counted_once,PASS,6.2 deducted once from availability,no second cash subtraction use in reference case,0.000001,
+VR-034,liquidity,restricted_cash_excluded,PASS,cash above floor plus revolver availability,no book or restricted cash credited,0.000001,
+VR-035,transaction,phase4_reference_opening_balances,PASS,650/29.89771875,650/29.89771875,0.000001,
+VR-036,transaction,financing_fees_counted_once,PASS,10 included in Phase 4 sources and uses only,no post-closing duplicate cash use,0.000001,
+VR-037,debt,retained_obligation_consistency,PASS,62.619 conservative proxy,payments modeled; principal/interest split not fabricated,0.000001,
+VR-038,maturity,maturity_dates,PASS,existing event after 2029-07-31; proposed 2031-01-31,2029-08-01 and 2031-01-31,0.000001,
+VR-039,maturity,unsupported_gap_visible,PASS,existing=432.7492812067100176549274129;proposed=340.9478312215931607465924833,non-negative explicit value,0.000001,
+VR-040,maturity,no_post_maturity_revolver_availability,PASS,0/0,zero after maturity,0.000001,
+VR-041,comparison,same_operating_case_for_both_structures,PASS,identical quarter operating inputs,"financing structure changes only debt, interest and maturity",0.000001,
+VR-042,sensitivity,amortization_cases,PASS,5;10;15,required annual percentages,0.000001,
+VR-043,sensitivity,pricing_cases,PASS,250;300;350,required spread range,0.000001,
+VR-044,sensitivity,existing_pricing_grid_range,PASS,200-275 bps;5.57%-6.32%,approved grid plus owner-reviewed 3.57% base proxy,0.000001,
+VR-045,sensitivity,existing_rate_neutral_label,PASS,rate_neutral_not_actual_or_representative,6.57% not described as actual or representative,0.000001,
+VR-046,comparison,common_horizon_dates_and_interest_period,PASS,2026-02-01_to_2029-07-31;event=2029-08-01,same date range for both alternatives,0.000001,
+VR-047,comparison,proposed_tail_separated,PASS,2029-08-01_to_2031-01-31,proposed extension only,0.000001,
+VR-048,presentation,fy2026_periods_reconcile,PASS,Q1 plus Q2-Q4 equals FY2026,operating periods reconcile exactly,0.000001,
+VR-049,presentation,fy2026_financing_not_ambiguously_full_year,PASS,full-year financing blank with explicit status,Q1 existing-facility interest unavailable,0.000001,
+VR-050,governance,formal_covenant_compliance_not_asserted,NOT_DETERMINABLE,not_determinable,"official contractual EBITDA, eligible cash and testing definitions unavailable",0.000001,Phase 5 metrics are preliminary analytical diagnostics only.
+VR-051,governance,dpo_not_determinable,NOT_DETERMINABLE,not_determinable,purchases and payment terms unavailable,0.000001,AP/cost-of-sales proxy is explicitly not DPO.
+VR-052,governance,retained_debt_principal_allocation,NOT_DETERMINABLE,not_determinable,future payments mix principal and interest,0.000001,Liability held as a conservative opening proxy.
+VR-053,governance,recurring_financing_fees,NOT_DETERMINABLE,not_determinable,executed fee terms and applicable balances unavailable,0.000001,Excluded rather than entered as zero; model results are before these fees.
+VR-054,governance,applicable_existing_pricing_tier,NOT_DETERMINABLE,not_determinable,"contractual leverage, eligible cash and pricing-tier status unavailable",0.000001,Existing grid is modeled as a range; 6.57% is rate-neutral only.
+VR-055,governance,distribution_permissions,NOT_DETERMINABLE,not_determinable,public evidence does not establish all dividend and repurchase permissions,0.000001,Planned distributions remain visible with debt-funding and provisional-compliance flags.
+VR-056,governance,actual_same_point_closing_cash,NOT_DETERMINABLE,not_determinable,January 31 accessible cash is unavailable at the cutoff,0.000001,$25m is an owner-reviewed Phase 5 testing assumption for both alternatives.

@@ -1,0 +1,2 @@
+repository,branch,local_head,tracked_origin_main,live_remote_main,ahead,behind,working_tree_clean_before_work,verified_on,notes
+owencchapman24/quanex-credit-underwriting,main,8ed5b5c320a64fd0da9ba54ecd84e5ca5692158a,8ed5b5c320a64fd0da9ba54ecd84e5ca5692158a,8ed5b5c320a64fd0da9ba54ecd84e5ca5692158a,0,0,yes,2026-09-10,Verified before Phase 5 edits; live remote checked independently with git ls-remote.

@@ -35,6 +35,7 @@ PHASE3_SOURCES = ROOT / "data" / "phase3" / "raw" / "SOURCE_ADDITIONS.csv"
 PHASE3_TRENDS = ROOT / "data" / "phase3" / "processed" / "QUARTERLY_SEGMENT_TRENDS.csv"
 PHASE3_GAPS = ROOT / "data" / "phase3" / "processed" / "INFORMATION_GAPS.csv"
 APPROVED_PHASE3_COMMIT = "f382b0007396a6a4e93bd17ac66b5326b35dbe83"
+APPROVED_PHASE4_COMMIT = "8ed5b5c320a64fd0da9ba54ecd84e5ca5692158a"
 CUTOFF = date(2025, 12, 15)
 CLOSING_DATE = date(2026, 1, 31)
 
@@ -1535,11 +1536,50 @@ def changed_paths() -> list[str]:
     return paths
 
 
+def protected_phase4_changes() -> list[str]:
+    """Return approved Phase 4 analytical artifacts changed from approval."""
+    protected = [
+        str(path.relative_to(ROOT)).replace("\\", "/")
+        for path in generated_files()
+    ] + ["tests/test_phase4.py"]
+    missing = [path for path in protected if not (ROOT / path).is_file()]
+    result = subprocess.run(
+        ["git", "diff", "--name-only", APPROVED_PHASE4_COMMIT, "--", *protected],
+        cwd=ROOT, text=True, capture_output=True, check=True,
+    )
+    changed = [line.replace("\\", "/") for line in result.stdout.splitlines() if line]
+    return sorted(set(missing + changed))
+
+
 def validate_changed_paths() -> None:
-    allowed_exact = {"README.md", "scripts/phase3.py", "scripts/phase4.py", "tests/test_phase4.py"}
+    try:
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT, check=True,
+            text=True, capture_output=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise Phase4Error(f"Cannot verify HEAD: {exc}") from exc
+    if head != APPROVED_PHASE3_COMMIT:
+        descendant = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", APPROVED_PHASE4_COMMIT, head],
+            cwd=ROOT, text=True, capture_output=True,
+        )
+        if descendant.returncode != 0:
+            raise Phase4Error(f"HEAD is outside the approved Phase 4 lineage: {head}")
+        protected = protected_phase4_changes()
+        if protected:
+            raise Phase4Error(
+                "Protected Phase 4 artifact changed after approval: " + ", ".join(protected)
+            )
+    allowed_exact = {
+        "README.md", "scripts/phase3.py", "scripts/phase4.py", "scripts/phase5.py",
+        "tests/test_phase4.py", "tests/test_phase5.py",
+    }
     unexpected = [path for path in changed_paths()
                   if path not in allowed_exact and not path.startswith("data/phase4/")
-                  and not path.startswith("docs/phase-4/")]
+                  and not path.startswith("docs/phase-4/")
+                  and not path.startswith("data/phase5/")
+                  and not path.startswith("docs/phase-5/")]
     if unexpected:
         raise Phase4Error(f"Unexpected changed paths: {', '.join(unexpected)}")
 

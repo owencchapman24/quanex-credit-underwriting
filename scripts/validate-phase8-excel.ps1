@@ -67,7 +67,9 @@ try {
     if (-not $checks.Range("G20").HasFormula -or $selectorFormula -notlike "=IF(OR(*") {
         throw "Checks!G20 did not retain the Excel-compatible formula"
     }
-    if ($initialFormulaCount -ne 2771 -or $initialChecksFormulaCount -ne 66) {
+    $phase9Present = Test-Path -LiteralPath (Join-Path $root "data\phase9")
+    if ((-not $phase9Present -and ($initialFormulaCount -ne 2771 -or $initialChecksFormulaCount -ne 66)) -or
+        ($phase9Present -and ($initialFormulaCount -lt 2771 -or $initialChecksFormulaCount -lt 66))) {
         throw "Unexpected formula count before Excel calculation"
     }
     if ([string]$assumptions.Range("D4").Value2 -ne "Base") {
@@ -97,7 +99,7 @@ try {
     $assumptions2 = $reopened.Worksheets.Item("Assumptions")
     $summary2 = $reopened.Worksheets.Item("Credit Summary")
     $reopenedChecksFormulaCount = $checks2.UsedRange.SpecialCells(-4123).Count
-    if ($reopenedFormulaCount -ne 2771 -or $reopenedChecksFormulaCount -ne 66) {
+    if ($reopenedFormulaCount -ne $initialFormulaCount -or $reopenedChecksFormulaCount -ne $initialChecksFormulaCount) {
         throw "Formula count changed after Excel save and reopen"
     }
     if (-not $checks2.Range("G20").HasFormula -or [string]$assumptions2.Range("D4").Value2 -ne "Base") {

@@ -1,0 +1,8 @@
+action_id,severity_classification,required_lender_action,legal_boundary,review_status
+P9E-001,analyst_warning,Investigate and reconcile; obtain a 10-business-day corrective-action plan.,warning does not itself terminate draws,owner_reviewed
+P9E-002,reporting_exception,"Require corrected reporting, increase frequency and preserve rights subject to cure terms.",reporting default depends on executed documentation,owner_reviewed
+P9E-003,contractual_covenant_breach,"Suspend restricted payments under proposed terms; obtain consent, amendment, waiver or support before relying on continued drawability.",no waiver or continued draw is assumed,owner_reviewed
+P9E-004,payment_default,"Immediate credit, legal and special-assets escalation; verify cure period and preserve remedies.",remedies depend on executed documents,owner_reviewed
+P9E-005,liquidity_failure,"Require a 13-week cash plan, weekly reporting and funded support; stop assuming revolver availability.",new borrowing remains subject to draw conditions,owner_reviewed
+P9E-006,maturity_refinancing_risk,Begin watchlist review at 24 months without a plan and special-assets review at 12 months without an executable solution.,refinancing is separately underwritten,owner_reviewed
+P9E-007,legal_or_documentation_exception,"Obtain counsel analysis, corrective documents and required consents; preserve conditions precedent and remedies.",do not claim an undocumented prohibition or lien,owner_reviewed

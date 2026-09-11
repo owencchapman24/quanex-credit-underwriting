@@ -1,0 +1,3 @@
+# Phase 10 handoff
+
+Phase 10 has not started. The owner reviewed every `P9D` decision, including the revised other-funded-obligations deduction and full consolidated-access ceiling classification. The official public-information facility recovery remains `N/D`; illustrative recovery cannot rescue primary repayment or improve the provisional borrower grade. Phase 10 must preserve the conditional $15m source, unsupported maturity gap, separate retained-facility alternative, private legal and collateral gaps, and the distinction between warnings, covenants, reporting exceptions, payment defaults, liquidity failures and refinancing risk.

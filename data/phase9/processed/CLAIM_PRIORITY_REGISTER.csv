@@ -1,0 +1,6 @@
+claim_id,claim_name,amount,unit,claim_class,priority_status,source_or_ids,collateral_access,review_status,limitations
+P9CL-001,Term loan principal,551.65625,USD_millions,bank_facility,pari_passu_assumed,P9A-003,N/D,owner_reviewed,"Priority, guarantor coverage, collateral access and enforceability require private legal diligence."
+P9CL-002,Revolver principal,293.8,USD_millions,bank_facility,pari_passu_assumed,P9A-004,N/D,owner_reviewed,"Priority, guarantor coverage, collateral access and enforceability require private legal diligence."
+P9CL-003,Unpaid cash interest,5.39512953595644479781130965,USD_millions,bank_facility,pari_passu_assumed,P9A-005,N/D,owner_reviewed,"Priority, guarantor coverage, collateral access and enforceability require private legal diligence."
+P9CL-004,Retained finance lease and other funded obligations,62.619,USD_millions,other_funded_debt,ranking_not_determinable_deducted_for_sensitivity,P9A-006,N/D,owner_reviewed,"Priority, guarantor coverage, collateral access and enforceability require private legal diligence."
+P9CL-005,"Taxes, employee, administrative, local and other priority claims",N/D,USD_millions,other_priority,not_determinable,GAP-001;GAP-002,N/D,not_determinable,"Priority, guarantor coverage, collateral access and enforceability require private legal diligence."

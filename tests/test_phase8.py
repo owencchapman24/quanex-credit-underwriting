@@ -116,14 +116,20 @@ class Phase8WorkbookTests(unittest.TestCase):
     def test_03a_sheet14_is_checks_and_formulas_are_excel_compatible(self) -> None:
         structure = phase8.workbook_structure()
         self.assertEqual(structure["sheet_paths"]["Checks"], "xl/worksheets/sheet14.xml")
-        self.assertEqual(structure["formula_counts_by_sheet"]["Checks"], 66)
+        if (ROOT / "data" / "phase9").exists():
+            self.assertGreaterEqual(structure["formula_counts_by_sheet"]["Checks"], 66)
+        else:
+            self.assertEqual(structure["formula_counts_by_sheet"]["Checks"], 66)
         self.assertEqual(structure["excel_formula_compatibility_issues"], [])
         selector_check = self.formula("Checks", "G20")
         self.assertTrue(selector_check.startswith("IF(OR("))
         self.assertNotIn("COUNTIF({", selector_check.upper())
 
     def test_04_native_formula_population(self) -> None:
-        self.assertEqual(phase8.workbook_structure()["formula_count"], 2771)
+        if (ROOT / "data" / "phase9").exists():
+            self.assertGreaterEqual(phase8.workbook_structure()["formula_count"], 2771)
+        else:
+            self.assertEqual(phase8.workbook_structure()["formula_count"], 2771)
         for sheet in ("Transaction", "Forecast", "Debt Schedule", "Liquidity", "Covenants"):
             self.assertIn("<f", self.xml_text(sheet), sheet)
 
@@ -240,9 +246,13 @@ class Phase8WorkbookTests(unittest.TestCase):
 
     def test_26_recovery_remains_pending_phase9(self) -> None:
         text = "\n".join(self.shared)
-        self.assertIn("Pending Phase 9", text)
-        self.assertIn("No recovery percentage presented", text)
-        self.assertNotIn("recovery percentage calculated", text.lower())
+        if (ROOT / "data" / "phase9").exists():
+            self.assertIn("Official facility recovery remains N/D", text)
+            self.assertIn("Recovery analysis", text)
+        else:
+            self.assertIn("Pending Phase 9", text)
+            self.assertIn("No recovery percentage presented", text)
+            self.assertNotIn("recovery percentage calculated", text.lower())
 
     def test_27_source_ledger_respects_cutoff(self) -> None:
         ledger = rows(phase8.DOCS / "SOURCE_LEDGER.csv")

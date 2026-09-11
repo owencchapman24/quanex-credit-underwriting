@@ -1,0 +1,9 @@
+# Phase 9 methodology
+
+Phase 9 uses the approved Phase 0-8 evidence and the selected Phase 7 structure. No new source was added and the information cutoff remains 2025-12-15. The primary recovery date is 2027-12-31, the first mandatory cash-interest failure in the selected severe-unmitigated continued-draw sensitivity. The analysis separates borrower default risk from facility recovery and treats recovery as secondary repayment.
+
+Going-concern and asset-realization sensitivities are alternative methods and are never added. Each deducts realization costs and the $62.619m other-funded-obligations amount once, caps the illustrative allocation at the bank claim and prevents negative proceeds. The deduction avoids ignoring retained finance leases and other funded obligations; it does not establish legal seniority. Consolidated book assets are reference values, not appraisals, eligible collateral or a borrowing base. The asset method is a full consolidated-access ceiling case, not expected lender access. The official facility recovery remains `N/D` because legal access, guarantor coverage, liens, collateral, appraisals and priority claims are unavailable.
+
+The owner reviewed all 16 Phase 9 decisions. Their underlying values remain illustrative assumptions or `N/D` conclusions rather than facts, appraisals, borrowing-base determinations or legal conclusions. The provisional borrower grade is `Elevated`, uses only the approved five-grade project scale and is not a bank or agency rating. Monitoring maps every Phase 3 driver to at least one specific trigger and action. No Phase 10 recommendation is made.
+
+Workbook lineage is explicit. The original Phase 8 normalized fingerprint was `12589f4c34975118fad1aea3ddb83de8f67b4521f33307104ef1bd42efb07dd7`; the corrected Excel-compatible Phase 8 fingerprint was `7dae55edc1d7fbb7ae15c04ff8173a5e610e75c31f4a6c75ad2c72e4eb078635`. Phase 9 is generated from that corrected baseline.

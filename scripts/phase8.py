@@ -406,7 +406,9 @@ def validate_workbook(engine_report: dict[str, object] | None = None) -> list[di
 
     add("required sheet order", structure["sheets"] == required, " | ".join(structure["sheets"]), " | ".join(required))
     add("sheet14 maps to Checks", structure["sheet_paths"].get("Checks") == "xl/worksheets/sheet14.xml", structure["sheet_paths"].get("Checks"), "xl/worksheets/sheet14.xml")
-    add("native cell formula count", int(structure["formula_count"]) == 2771, structure["formula_count"], 2771)
+    phase9_present = (ROOT / "data" / "phase9").exists()
+    formula_ok = int(structure["formula_count"]) >= 2771 if phase9_present else int(structure["formula_count"]) == 2771
+    add("native cell formula count", formula_ok, structure["formula_count"], ">=2771 with Phase 9" if phase9_present else 2771)
     add("Excel-compatible formula serialization", not structure["excel_formula_compatibility_issues"], len(structure["excel_formula_compatibility_issues"]), 0)
     add("no external workbook links", not structure["external_links"], len(structure["external_links"]), 0)
     add("Checks is terminal", not structure["checks_dependencies"], len(structure["checks_dependencies"]), 0)

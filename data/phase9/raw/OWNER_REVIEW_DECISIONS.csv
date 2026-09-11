@@ -1,0 +1,17 @@
+decision_id,judgment,proposed_treatment,owner_action_required,review_status
+P9D-001,Primary recovery date,"Use 2027-12-31, the first mandatory cash-interest failure in selected severe unmitigated.",None before commit; revisit only if new evidence changes this treatment.,owner_reviewed
+P9D-002,Recovery earnings,Use stress-date TTM lender-base EBITDA of $130.356m for the going-concern sensitivity.,None before commit; revisit only if new evidence changes this treatment.,owner_reviewed
+P9D-003,Going-concern multiples,Use 3.0x / 4.0x / 5.0x only as low/base/high illustrative sensitivities.,None before commit; revisit only if new evidence changes this treatment.,owner_reviewed
+P9D-004,Going-concern realization cost,Deduct 10% once from enterprise value.,None before commit; revisit only if new evidence changes this treatment.,owner_reviewed
+P9D-005,Receivables realization,Use 50% / 70% / 85% of FY2025 consolidated book receivables.,None before commit; revisit only if new evidence changes this treatment.,owner_reviewed
+P9D-006,Inventory realization,Use 20% / 40% / 60% of FY2025 consolidated book inventory.,None before commit; revisit only if new evidence changes this treatment.,owner_reviewed
+P9D-007,PP&E realization,Use 20% / 40% / 60% of FY2025 consolidated net PP&E.,None before commit; revisit only if new evidence changes this treatment.,owner_reviewed
+P9D-008,Asset realization cost,Deduct 15% once from gross illustrative asset proceeds.,None before commit; revisit only if new evidence changes this treatment.,owner_reviewed
+P9D-009,Cash recovery credit,Give zero illustrative credit pending entity-level accessibility evidence.,None before commit; revisit only if new evidence changes this treatment.,owner_reviewed
+P9D-010,Goodwill and intangibles,Give zero asset-realization credit to goodwill and unsupported intangibles.,None before commit; revisit only if new evidence changes this treatment.,owner_reviewed
+P9D-011,Other-funded-obligations deduction,Deduct $62.619m of retained finance leases and other funded obligations once for conservative sensitivity; no legal ranking is asserted.,None before commit; revisit only if new evidence changes this treatment.,owner_reviewed
+P9D-012,Full consolidated-access ceiling case,"Use 100% consolidated accessibility solely as a gross mechanical upper-bound sensitivity, not expected lender access.",None before commit; revisit only if new evidence changes this treatment.,owner_reviewed
+P9D-013,Bank allocation,"Allocate illustrative bank proceeds pro rata among term, revolver, and unpaid interest.",None before commit; revisit only if new evidence changes this treatment.,owner_reviewed
+P9D-014,Official facility recovery,Keep the official recovery conclusion N/D.,None before commit; revisit only if new evidence changes this treatment.,owner_reviewed
+P9D-015,Borrower risk grade,Provisional grade: Elevated.,None before commit; revisit only if new evidence changes this treatment.,owner_reviewed
+P9D-016,Monitoring thresholds and actions,Adopt MON-001 through MON-026 as proposed post-closing monitoring triggers.,None before commit; revisit only if new evidence changes this treatment.,owner_reviewed

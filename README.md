@@ -264,5 +264,36 @@ The builder uses the bundled `@oai/artifact-tool`; the Python workflow and tests
 otherwise use the standard library. The workbook preserves the approved Phase
 7 provisional structure. The conditional $15 million source, closing cash
 interest, legal definitions and other diligence items remain unresolved.
-Recovery analysis remains pending Phase 9, and no final credit recommendation
-or risk grade is made.
+Phase 9 now adds recovery sensitivities, a provisional borrower risk grade and
+a Quanex-specific monitoring and escalation schedule. The primary recovery date
+is the selected severe path's December 31, 2027 first mandatory cash-interest
+failure. Going-concern and asset-realization cases are alternative owner-review
+sensitivities and are not added. Official facility recovery remains `N/D`
+because public information does not establish complete guarantor, collateral,
+lien, priority, access, appraisal or claims facts. The provisional `Elevated`
+borrower grade assesses default risk separately and is owner reviewed. All 16
+Phase 9 decisions are owner reviewed while their illustrative,
+proposed-assumption, or `N/D` classifications remain intact. The $62.619
+million amount is an other-funded-obligations deduction used once for
+conservative sensitivity, not a verified senior claim. The asset-realization
+analysis is a full consolidated-access ceiling case, not expected lender
+access. Phase 10 has not started and no final credit recommendation is made.
+
+- [Phase 9 methodology](docs/phase-9/METHODOLOGY.md)
+- [Phase 9 recovery analysis](docs/phase-9/RECOVERY_ANALYSIS.md)
+- [Phase 9 borrower risk assessment](docs/phase-9/RISK_ASSESSMENT.md)
+- [Phase 9 monitoring plan](docs/phase-9/MONITORING_PLAN.md)
+- [Phase 10 bounded handoff](docs/phase-9/PHASE10_HANDOFF.md)
+- [Phase 9 source ledger](docs/phase-9/SOURCE_LEDGER.csv)
+
+Reproduce Phase 9 with:
+
+```powershell
+python scripts/phase9.py all
+powershell -ExecutionPolicy Bypass -NoProfile -File scripts/validate-phase9-excel.ps1
+python -m unittest discover -s tests -v
+```
+
+Phase 9 uses the Python standard library, the bundled `@oai/artifact-tool`,
+LibreOffice 26.8.0.3 and Microsoft Excel for Microsoft 365. It adds no external
+evidence and preserves the December 15, 2025 information cutoff.

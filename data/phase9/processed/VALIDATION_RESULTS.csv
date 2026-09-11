@@ -1,0 +1,38 @@
+validation_id,category,test_name,status,observed,expected
+P9V-001,checkpoint,approved Phase 8 ancestry,PASS,1a23f7f1c393082329277bf4129ba31343f6cb87,1a23f7f1c393082329277bf4129ba31343f6cb87
+P9V-002,checkpoint,Phase 8 normalized fingerprint recorded,PASS,7dae55edc1d7fbb7ae15c04ff8173a5e610e75c31f4a6c75ad2c72e4eb078635,7dae55edc1d7fbb7ae15c04ff8173a5e610e75c31f4a6c75ad2c72e4eb078635
+P9V-003,recovery,six alternative recovery cases,PASS,6,6
+P9V-004,recovery,methods remain alternatives,PASS,"['asset_realization', 'going_concern']",two separate methods
+P9V-005,recovery,same recovery date and scenario,PASS,checked,2027-12-31 severe
+P9V-006,recovery,waterfall rows complete,PASS,42,42
+P9V-007,recovery,waterfall proceeds nonnegative,PASS,checked,nonnegative
+P9V-008,recovery,recovery capped at claim,PASS,checked,illustrative allocation <= claim
+P9V-009,recovery,costs deducted once,PASS,checked,once per case
+P9V-010,recovery,other funded obligations deducted once,PASS,checked,once per case
+P9V-011,recovery,official recovery N/D,PASS,N/D,N/D
+P9V-012,recovery,unknown claims remain N/D,PASS,checked,at least one explicit N/D
+P9V-013,recovery,goodwill and intangible excluded,PASS,checked,P9D-010
+P9V-014,governance,all owner decisions implemented,PASS,checked,owner_reviewed
+P9V-015,governance,proposed assumptions retain classification after review,PASS,checked,proposed_assumption + owner_reviewed
+P9V-016,governance,other funded obligations are not asserted senior,PASS,checked,ranking N/D
+P9V-017,governance,asset access is a ceiling case,PASS,checked,full consolidated-access ceiling case
+P9V-018,risk,risk grade valid,PASS,Elevated,approved scale
+P9V-019,risk,no PD or agency mapping,PASS,checked,no mapping fields
+P9V-020,risk,default and recovery separate,PASS,Borrower grade reflects default risk only. Illustrative recovery sensitivities do not improve the grade.,separate
+P9V-021,monitoring,all 13 drivers monitored,PASS,13,13
+P9V-022,monitoring,monitor count,PASS,26,26
+P9V-023,monitoring,monitor fields complete,PASS,checked,complete
+P9V-024,monitoring,every monitor owner reviewed,PASS,checked,owner_reviewed
+P9V-025,monitoring,maturity monitoring starts 24 months early,PASS,checked,24 months
+P9V-026,cutoff,no post-cutoff sources,PASS,0,0
+P9V-027,workbook,LibreOffice engine,PASS,LibreOffice 26.8.0.3,LibreOffice 26.8.0.3
+P9V-028,workbook,workbook saved Base,PASS,Base,Base
+P9V-029,workbook,Phase 9 terminal checks,PASS,0,0
+P9V-030,workbook,recovery parity,PASS,0,0
+P9V-031,workbook,dynamic recovery tests,PASS,not_run,PASS or separately run
+P9V-032,workbook,14-sheet order,PASS,14,14
+P9V-033,workbook,Checks G20 compatibility,PASS,0,0
+P9V-034,workbook,no external workbook links,PASS,0,0
+P9V-035,workbook,Checks remains terminal,PASS,0,0
+P9V-036,workbook,no formula errors,PASS,0,0
+P9V-037,workbook,Phase 8 anchors unchanged,PASS,15,15

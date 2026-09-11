@@ -85,7 +85,32 @@ than scheduled policy reductions. Equal-versus-adverse timing sensitivity makes
 the conditional nature of exact distress dates explicit. Formal covenant
 compliance remains not determinable, book-cash net leverage remains a
 diagnostic, all modeled structures retain an unsupported maturity balloon
-without assumed refinancing, and Phase 7 has not started.
+without assumed refinancing.
+
+Phase 7 adds alternative-structure testing, covenant definitions, covenant and
+warning headroom, breach-intervention timing, distribution restrictions, an
+excess-cash-flow sweep framework, and formula-ready Phase 8 inputs. The
+owner-reviewed Phase 7 provisional structure for further underwriting is a
+practical $635m term commitment funded at closing, a $300m revolver with
+$29.898m drawn,
+and a conditional $15m non-debt contribution. The exact $639.851m term
+allocation remains only an analytical result derived from the zero-cash 3.25x
+total-funded-debt capacity. The contribution is a closing condition and may not
+consume the separate $25m operating cash floor; the funded term provides no
+continuing undrawn availability. An analyst leverage warning activates at or
+above its threshold, while a maximum covenant is breached only above its
+limit. Phase 7 separately reports a July 31, 2029 common-horizon comparison,
+each structure's ultimate-maturity result, a covenant-linked no-waiver path,
+an inherited Phase 6 analytical-shutoff sensitivity, and a continued-draw or
+waiver sensitivity. Missing coverage information is `N/D`; `N/M` is reserved
+for nonpositive denominators. Liquidity outputs distinguish opening liquidity,
+the subsequent post-closing minimum, and the all-in minimum; the selected base
+case all-in minimum is the $263.902m opening position. All 21 Phase 7 decisions
+are `owner_reviewed` for the public-information underwriting structure only,
+subject to stated conditions and diligence. This is not a lender commitment,
+final legal drafting, official compliance, or evidence that unresolved
+information exists. Book-cash net leverage remains diagnostic, no cash-flow
+benefit is taken for distribution restrictions, and Phase 8 has not started.
 
 - [Case charter](docs/phase-0/CASE_CHARTER.md)
 - [Existing financing and refinancing logic](docs/phase-0/EXISTING_FINANCING.md)
@@ -118,6 +143,12 @@ without assumed refinancing, and Phase 7 has not started.
 - [Phase 6 liquidity and reverse stress](docs/phase-6/LIQUIDITY_AND_REVERSE_STRESS.md)
 - [Phase 7 bounded handoff](docs/phase-6/PHASE7_HANDOFF.md)
 - [Phase 6 source ledger](docs/phase-6/SOURCE_LEDGER.csv)
+- [Phase 7 methodology](docs/phase-7/METHODOLOGY.md)
+- [Phase 7 covenant design](docs/phase-7/COVENANT_DESIGN.md)
+- [Phase 7 sizing rationale](docs/phase-7/SIZING_RATIONALE.md)
+- [Phase 7 proposed term sheet](docs/phase-7/FINAL_PROPOSED_TERM_SHEET.md)
+- [Phase 8 formula-ready handoff](docs/phase-7/PHASE8_HANDOFF.md)
+- [Phase 7 source ledger](docs/phase-7/SOURCE_LEDGER.csv)
 
 Run the Phase 0 controls with:
 
@@ -192,3 +223,16 @@ Phase 6 uses only the Python standard library and performs no live network
 access. It does not finalize the facility, amortization, covenants, refinancing,
 waiver, recovery, risk grade, committee recommendation, Excel workbook, credit
 memo, or begin Phase 7.
+
+Run the Phase 7 workflow and all decision-relevant tests with:
+
+```powershell
+python scripts/phase7.py all
+python -m unittest discover -s tests -v
+```
+
+Phase 7 uses only the Python standard library and performs no live network
+access. It does not claim official covenant compliance, assume accessible book
+cash, grant a waiver, assume refinancing at maturity, build the final Excel
+workbook, perform recovery analysis, assign a final risk grade, draft the final
+credit memo, commit or push, or begin Phase 8.

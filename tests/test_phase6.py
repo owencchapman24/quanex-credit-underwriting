@@ -344,10 +344,13 @@ class Phase6Tests(unittest.TestCase):
         after = phase6.fingerprints()
         self.assertEqual(before, after)
 
-    def test_64_no_phase7_implementation(self) -> None:
-        self.assertFalse((ROOT / "data" / "phase7").exists())
-        self.assertFalse((ROOT / "scripts" / "phase7.py").exists())
-        self.assertFalse((ROOT / "tests" / "test_phase7.py").exists())
+    def test_64_descendant_aware_validation_checkpoint(self) -> None:
+        self.assertEqual(
+            phase6.APPROVED_PHASE6_COMMIT,
+            "b5554f8848e1622ae1de1e371b974c886f3e33db",
+        )
+        self.assertFalse(phase6.approved_phase6_contains_phase7())
+        phase6.validate_changed_paths()
 
     def test_65_validate_entry_point(self) -> None:
         self.assertEqual(phase6.validate()["status"], "PASS")

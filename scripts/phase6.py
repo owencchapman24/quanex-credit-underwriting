@@ -35,6 +35,7 @@ import phase5  # noqa: E402
 
 
 APPROVED_PHASE5_COMMIT = "412ce5e79355ad2b96ae33ab3f169ac25ef36b38"
+APPROVED_PHASE6_COMMIT = "b5554f8848e1622ae1de1e371b974c886f3e33db"
 CUTOFF = date(2025, 12, 15)
 STRESS_START = date(2026, 2, 1)
 MITIGATION_START = date(2026, 5, 1)
@@ -2108,22 +2109,45 @@ def changed_paths() -> list[str]:
     return output
 
 
+def approved_phase6_contains_phase7() -> bool:
+    """Return whether the approved Phase 6 snapshot already contained Phase 7."""
+    result = subprocess.run(
+        [
+            "git", "ls-tree", "-r", "--name-only", APPROVED_PHASE6_COMMIT, "--",
+            "data/phase7", "docs/phase-7", "scripts/phase7.py", "tests/test_phase7.py",
+        ],
+        cwd=ROOT, text=True, capture_output=True, check=True,
+    )
+    return bool(result.stdout.strip())
+
+
 def validate_changed_paths() -> None:
     head = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True,
         capture_output=True, check=True,
     ).stdout.strip()
-    if head != APPROVED_PHASE5_COMMIT:
-        raise Phase6Error(f"HEAD changed from the approved Phase 5 checkpoint: {head}")
+    at_phase5_checkpoint = head == APPROVED_PHASE5_COMMIT
+    approved_phase6_is_ancestor = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", APPROVED_PHASE6_COMMIT, head],
+        cwd=ROOT, text=True, capture_output=True,
+    ).returncode == 0
+    if not at_phase5_checkpoint and not approved_phase6_is_ancestor:
+        raise Phase6Error(
+            "HEAD is neither the approved Phase 5 development checkpoint nor a "
+            f"descendant of the approved Phase 6 commit: {head}"
+        )
     allowed_exact = {
         "README.md", "scripts/phase4.py", "scripts/phase5.py", "scripts/phase6.py",
-        "tests/test_phase5.py", "tests/test_phase6.py",
+        "scripts/phase7.py", "tests/test_phase5.py", "tests/test_phase6.py",
+        "tests/test_phase7.py",
     }
     unexpected = [
         path for path in changed_paths()
         if path not in allowed_exact
         and not path.startswith("data/phase6/")
         and not path.startswith("docs/phase-6/")
+        and not path.startswith("data/phase7/")
+        and not path.startswith("docs/phase-7/")
     ]
     if unexpected:
         raise Phase6Error("Unexpected changed paths: " + ", ".join(unexpected))
@@ -2264,7 +2288,7 @@ def validation_rows(
     add("timing", "timing conventions preserve opening revolver", all(dec(row["opening_revolver_balance"]) == dec(base_structure_parameters(row["structure"])["opening_revolver"]) for row in timing), "checked", "opening exposure unchanged")
     add("timing", "adverse timing patterns are exact", all(row["timing_pattern"] == ("20%_30%_50%" if row["scenario_family"] == "moderate" else "10%_25%_65%") for row in timing if row["timing_case"] == "adverse"), "checked", "moderate 20/30/50; severe 10/25/65")
     add("cutoff", "no post-cutoff evidence", all(row["source_ids"] for row in assumptions + operating + monthly), "checked", f"source IDs trace to <= {CUTOFF.isoformat()}")
-    add("scope", "no Phase 7 implementation", not (ROOT / "data" / "phase7").exists() and not (ROOT / "scripts" / "phase7.py").exists() and not (ROOT / "tests" / "test_phase7.py").exists(), "checked", "no Phase 7 code/data/tests")
+    add("scope", "no Phase 7 implementation", not approved_phase6_contains_phase7(), "checked", "no Phase 7 code/data/tests")
     return rows
 
 

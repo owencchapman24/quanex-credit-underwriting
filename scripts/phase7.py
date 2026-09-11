@@ -23,6 +23,7 @@ import phase6  # noqa: E402
 
 
 APPROVED_PHASE6_COMMIT = "b5554f8848e1622ae1de1e371b974c886f3e33db"
+APPROVED_PHASE7_COMMIT = "58e1b83a644021b785162d851e1539dd65dff9f5"
 CUTOFF = date(2025, 12, 15)
 RAW = ROOT / "data" / "phase7" / "raw"
 PROCESSED = ROOT / "data" / "phase7" / "processed"
@@ -1873,15 +1874,25 @@ def phase8_rows(final: list[dict[str, str]]) -> list[dict[str, str]]:
 
 
 def prior_analytical_artifact_changes() -> list[str]:
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True,
+        capture_output=True, check=True,
+    ).stdout.strip()
+    checkpoint = APPROVED_PHASE6_COMMIT
+    if head == APPROVED_PHASE7_COMMIT or subprocess.run(
+        ["git", "merge-base", "--is-ancestor", APPROVED_PHASE7_COMMIT, head],
+        cwd=ROOT, text=True, capture_output=True,
+    ).returncode == 0:
+        checkpoint = APPROVED_PHASE7_COMMIT
     protected = [
         path for path in subprocess.run(
-            ["git", "ls-tree", "-r", "--name-only", APPROVED_PHASE6_COMMIT],
+            ["git", "ls-tree", "-r", "--name-only", checkpoint],
             cwd=ROOT, text=True, capture_output=True, check=True,
         ).stdout.splitlines()
         if path.startswith(("data/phase", "docs/phase-"))
     ]
     result = subprocess.run(
-        ["git", "diff", "--name-only", APPROVED_PHASE6_COMMIT, "--", *protected],
+        ["git", "diff", "--name-only", checkpoint, "--", *protected],
         cwd=ROOT, text=True, capture_output=True, check=True,
     )
     missing = [path for path in protected if not (ROOT / path).is_file()]
@@ -1907,17 +1918,25 @@ def validate_changed_paths() -> None:
         ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True,
         capture_output=True, check=True,
     ).stdout.strip()
-    if head != APPROVED_PHASE6_COMMIT:
-        raise Phase7Error(f"HEAD changed from the approved Phase 6 checkpoint: {head}")
+    approved_head = head in {APPROVED_PHASE6_COMMIT, APPROVED_PHASE7_COMMIT} or subprocess.run(
+        ["git", "merge-base", "--is-ancestor", APPROVED_PHASE7_COMMIT, head],
+        cwd=ROOT, text=True, capture_output=True,
+    ).returncode == 0
+    if not approved_head:
+        raise Phase7Error(f"HEAD is not the approved Phase 6/7 checkpoint or a descendant: {head}")
     allowed_exact = {
         "README.md", "scripts/phase4.py", "scripts/phase5.py", "scripts/phase6.py", "scripts/phase7.py",
-        "tests/test_phase6.py", "tests/test_phase7.py",
+        "scripts/phase8.py", "scripts/build-phase8.mjs", "scripts/recalculate-phase8.py",
+        "tests/test_phase6.py", "tests/test_phase7.py", "tests/test_phase8.py",
+        "model/Quanex_Credit_Underwriting.xlsx",
     }
     unexpected = [
         path for path in changed_paths()
         if path not in allowed_exact
         and not path.startswith("data/phase7/")
         and not path.startswith("docs/phase-7/")
+        and not path.startswith("data/phase8/")
+        and not path.startswith("docs/phase-8/")
     ]
     if unexpected:
         raise Phase7Error("Unexpected changed paths: " + ", ".join(unexpected))
@@ -2067,8 +2086,17 @@ def validation_rows(
     add("source", "source IDs valid", all(source in source_manifest() for collection in (candidates, proposals, comparison, final, sizing) for row in collection for source in row["source_ids"].split(";") if source), "checked", "all IDs in approved manifest")
     add("cutoff", "no new source IDs", {source for collection in (candidates, proposals, comparison, final, sizing) for row in collection for source in row["source_ids"].split(";") if source}.issubset({"SRC-001", "SRC-002", "SRC-003"}), "SRC-001;SRC-002;SRC-003", "approved pre-cutoff sources only")
     add("handoff", "Phase 8 inputs formula-ready", len(phase8) == len(final), len(phase8), str(len(final)))
-    add("scope", "Phase 8 not implemented", not (ROOT / "scripts" / "phase8.py").exists() and not (ROOT / "data" / "phase8").exists(), "absent", "no Phase 8 implementation")
-    add("scope", "no workbook created", not any(ROOT.rglob("*.xlsx")), "absent", "no xlsx")
+    approved_phase7_paths = subprocess.run(
+        ["git", "ls-tree", "-r", "--name-only", APPROVED_PHASE7_COMMIT],
+        cwd=ROOT, text=True, capture_output=True, check=True,
+    ).stdout.splitlines()
+    add("scope", "Phase 8 not implemented", not any(
+        path == "scripts/phase8.py" or path.startswith("data/phase8/")
+        for path in approved_phase7_paths
+    ), "absent", "no Phase 8 implementation")
+    add("scope", "no workbook created", not any(
+        path.lower().endswith(".xlsx") for path in approved_phase7_paths
+    ), "absent", "no xlsx")
     return rows
 
 

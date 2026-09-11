@@ -109,8 +109,9 @@ case all-in minimum is the $263.902m opening position. All 21 Phase 7 decisions
 are `owner_reviewed` for the public-information underwriting structure only,
 subject to stated conditions and diligence. This is not a lender commitment,
 final legal drafting, official compliance, or evidence that unresolved
-information exists. Book-cash net leverage remains diagnostic, no cash-flow
-benefit is taken for distribution restrictions, and Phase 8 has not started.
+information exists. Book-cash net leverage remains diagnostic and no cash-flow
+benefit is taken for distribution restrictions. Phase 8 now presents those
+approved decisions in the workbook without changing them.
 
 - [Case charter](docs/phase-0/CASE_CHARTER.md)
 - [Existing financing and refinancing logic](docs/phase-0/EXISTING_FINANCING.md)
@@ -236,3 +237,30 @@ access. It does not claim official covenant compliance, assume accessible book
 cash, grant a waiver, assume refinancing at maturity, build the final Excel
 workbook, perform recovery analysis, assign a final risk grade, draft the final
 credit memo, commit or push, or begin Phase 8.
+
+## Phase 8 Excel underwriting model
+
+Phase 8 adds `model/Quanex_Credit_Underwriting.xlsx`, a 14-sheet formula-driven
+underwriting workbook with one live scenario selector, nine versioned and
+stale-aware comparison captures, and one authoritative forecast, debt,
+liquidity and covenant chain. The workbook uses 24 monthly debt/liquidity
+periods followed by 12 non-overlapping quarters, native charts, bounded print
+areas, repeated schedule headers, a source register, and terminal checks.
+LibreOffice 26.8.0.3 performs the required full recalculation and saves the Base
+scenario because Microsoft Excel is not installed on this desktop.
+
+Reproduce and validate with:
+
+```powershell
+python scripts/phase8.py all
+python scripts/phase8.py validate
+python scripts/phase8.py dynamic
+python -m unittest discover -s tests -v
+```
+
+The builder uses the bundled `@oai/artifact-tool`; the Python workflow and tests
+otherwise use the standard library. The workbook preserves the approved Phase
+7 provisional structure. The conditional $15 million source, closing cash
+interest, legal definitions and other diligence items remain unresolved.
+Recovery analysis remains pending Phase 9, and no final credit recommendation
+or risk grade is made.

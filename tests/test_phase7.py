@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import subprocess
 import sys
 import unittest
 from decimal import Decimal
@@ -316,12 +317,18 @@ class Phase7Tests(unittest.TestCase):
         self.assertEqual(before, after)
 
     def test_50_phase8_not_started(self) -> None:
-        self.assertFalse((ROOT / "scripts" / "phase8.py").exists())
-        self.assertFalse((ROOT / "data" / "phase8").exists())
-        self.assertFalse((ROOT / "docs" / "phase-8").exists())
+        tracked = subprocess.run(
+            ["git", "ls-tree", "-r", "--name-only", phase7.APPROVED_PHASE7_COMMIT],
+            cwd=ROOT, text=True, capture_output=True, check=True,
+        ).stdout.splitlines()
+        self.assertFalse(any(path == "scripts/phase8.py" or path.startswith(("data/phase8/", "docs/phase-8/")) for path in tracked))
 
     def test_51_no_excel_workbook(self) -> None:
-        self.assertFalse(any(ROOT.rglob("*.xlsx")))
+        tracked = subprocess.run(
+            ["git", "ls-tree", "-r", "--name-only", phase7.APPROVED_PHASE7_COMMIT],
+            cwd=ROOT, text=True, capture_output=True, check=True,
+        ).stdout.splitlines()
+        self.assertFalse(any(path.lower().endswith(".xlsx") for path in tracked))
 
     def test_52_validate_entry_point(self) -> None:
         self.assertEqual(phase7.validate()["status"], "PASS")

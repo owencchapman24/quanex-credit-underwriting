@@ -3026,8 +3026,10 @@ def validate_changed_paths() -> None:
             )
     allowed_exact = {
         "README.md", "scripts/phase4.py", "scripts/phase5.py", "scripts/phase6.py",
-        "scripts/phase7.py", "tests/test_phase5.py", "tests/test_phase6.py",
-        "tests/test_phase7.py",
+        "scripts/phase7.py", "scripts/phase8.py", "scripts/build-phase8.mjs",
+        "scripts/recalculate-phase8.py", "tests/test_phase5.py", "tests/test_phase6.py",
+        "tests/test_phase7.py", "tests/test_phase8.py",
+        "model/Quanex_Credit_Underwriting.xlsx",
     }
     unexpected = [
         path for path in changed_paths()
@@ -3038,6 +3040,8 @@ def validate_changed_paths() -> None:
         and not path.startswith("docs/phase-6/")
         and not path.startswith("data/phase7/")
         and not path.startswith("docs/phase-7/")
+        and not path.startswith("data/phase8/")
+        and not path.startswith("docs/phase-8/")
     ]
     if unexpected:
         raise Phase5Error(f"Unexpected changed paths: {', '.join(unexpected)}")

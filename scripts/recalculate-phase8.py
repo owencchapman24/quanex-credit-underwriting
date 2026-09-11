@@ -1,0 +1,328 @@
+"""Safe LibreOffice recalculation, capture, inspection and dynamic QA for Phase 8."""
+
+from __future__ import annotations
+
+import json
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+import uno
+from com.sun.star.beans import PropertyValue
+
+
+SCENARIOS = (
+    ("Base", "BASE"),
+    ("Moderate unmitigated", "MODERATE_UNMITIGATED"),
+    ("Moderate mitigated", "MODERATE_MITIGATED"),
+    ("Severe unmitigated", "SEVERE_UNMITIGATED"),
+    ("Severe mitigated", "SEVERE_MITIGATED"),
+    ("Moderate Phase 6 analytical shutoff", "MODERATE_NO_WAIVER"),
+    ("Severe Phase 6 analytical shutoff", "SEVERE_NO_WAIVER"),
+    ("Moderate Phase 7 covenant-linked no-waiver", "MODERATE_PHASE7_COVENANT_NO_WAIVER"),
+    ("Severe Phase 7 covenant-linked no-waiver", "SEVERE_PHASE7_COVENANT_NO_WAIVER"),
+)
+SOFFICE = Path(r"C:\Program Files\LibreOffice\program\soffice.exe")
+ENGINE = "LibreOffice 26.8.0.3"
+
+
+def prop(name: str, value: object) -> PropertyValue:
+    item = PropertyValue()
+    item.Name = name
+    item.Value = value
+    return item
+
+
+def free_port() -> int:
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    sock.close()
+    return port
+
+
+def connect_office(profile: Path):
+    port = free_port()
+    profile_url = uno.systemPathToFileUrl(str(profile))
+    process = subprocess.Popen([
+        str(SOFFICE), "--headless", "--nologo", "--nodefault", "--norestore",
+        f"-env:UserInstallation={profile_url}",
+        f"--accept=socket,host=127.0.0.1,port={port};urp;StarOffice.ComponentContext",
+    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    local = uno.getComponentContext()
+    resolver = local.ServiceManager.createInstanceWithContext("com.sun.star.bridge.UnoUrlResolver", local)
+    context = None
+    for _ in range(100):
+        try:
+            context = resolver.resolve(
+                f"uno:socket,host=127.0.0.1,port={port};urp;StarOffice.ComponentContext"
+            )
+            break
+        except Exception:
+            time.sleep(0.1)
+    if context is None:
+        process.terminate()
+        raise RuntimeError("Unable to connect to isolated LibreOffice instance")
+    desktop = context.ServiceManager.createInstanceWithContext("com.sun.star.frame.Desktop", context)
+    return process, desktop
+
+
+def open_workbook(desktop, path: Path):
+    url = uno.systemPathToFileUrl(str(path.resolve()))
+    document = desktop.loadComponentFromURL(url, "_blank", 0, (prop("Hidden", True), prop("ReadOnly", False)))
+    if document is None:
+        raise RuntimeError(f"LibreOffice could not open {path}")
+    document.enableAutomaticCalculation(True)
+    return document
+
+
+def cell(document, sheet: str, address: str):
+    return document.Sheets.getByName(sheet).getCellRangeByName(address)
+
+
+def cell_value(document, sheet: str, address: str):
+    item = cell(document, sheet, address)
+    if getattr(item, "Error", 0):
+        return item.String
+    if item.Type.value == "VALUE":
+        return item.Value
+    if item.Type.value == "FORMULA" and item.FormulaResultType.value == "VALUE":
+        return item.Value
+    return item.String
+
+
+def set_cell(document, sheet: str, address: str, value: object) -> None:
+    item = cell(document, sheet, address)
+    if isinstance(value, (int, float)):
+        item.Value = float(value)
+    else:
+        item.String = "" if value is None else str(value)
+
+
+def configure_print(document) -> None:
+    landscape = {"Forecast", "Debt Schedule", "Liquidity", "Covenants", "Scenario Comparison", "Historicals", "Credit Adjustments", "Sources"}
+    repeated_rows = {
+        "Assumptions": (40, 40), "Scenario Comparison": (11, 11), "Historicals": (6, 6),
+        "Credit Adjustments": (19, 19), "Forecast": (7, 8), "Debt Schedule": (7, 11),
+        "Liquidity": (12, 12), "Covenants": (7, 7), "Sources": (1, 1), "Checks": (6, 6),
+    }
+    for sheet in document.Sheets:
+        cursor = sheet.createCursor()
+        cursor.gotoEndOfUsedArea(True)
+        sheet.setPrintAreas((cursor.RangeAddress,))
+        style = document.StyleFamilies.getByName("PageStyles").getByName(sheet.PageStyle)
+        style.IsLandscape = sheet.Name in landscape
+        style.ScaleToPagesX = 1
+        style.ScaleToPagesY = 0
+        style.LeftMargin = 900
+        style.RightMargin = 900
+        style.TopMargin = 900
+        style.BottomMargin = 900
+        if sheet.Name in repeated_rows:
+            first, last = repeated_rows[sheet.Name]
+            title_range = sheet.getCellRangeByPosition(0, first - 1, 0, last - 1)
+            sheet.setTitleRows(title_range.RangeAddress)
+            sheet.setPrintTitleRows(True)
+
+
+def capture(document) -> list[dict[str, object]]:
+    captures: list[dict[str, object]] = []
+    captured_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    version = str(cell_value(document, "Assumptions", "D6"))
+    source_hash = str(cell_value(document, "Assumptions", "D8"))
+    for index, (scenario_name, scenario_id) in enumerate(SCENARIOS, start=12):
+        set_cell(document, "Assumptions", "D4", scenario_name)
+        document.calculateAll()
+        source = document.Sheets.getByName("Scenario Comparison").getCellRangeByName("F5:Y5")
+        target = document.Sheets.getByName("Scenario Comparison").getCellRangeByName(f"F{index}:Y{index}")
+        values = source.getDataArray()[0]
+        target.setDataArray((values,))
+        set_cell(document, "Scenario Comparison", f"Z{index}", captured_at)
+        set_cell(document, "Scenario Comparison", f"AA{index}", version)
+        set_cell(document, "Scenario Comparison", f"AB{index}", source_hash)
+        set_cell(document, "Scenario Comparison", f"AC{index}", float(cell_value(document, "Assumptions", "D7")))
+        captures.append({
+            "capture_id": f"P8C-{index-11:03d}", "scenario_name": scenario_name,
+            "scenario_id": scenario_id, "captured_at": captured_at, "source_version": version,
+            "source_hash": source_hash, "input_signature": cell_value(document, "Assumptions", "D7"),
+            "fy2026_ebitda": values[0], "ebitda_margin": values[1],
+            "modeled_operating_cash": values[2], "cfads": values[3],
+            "cash_interest": values[4], "scheduled_principal": values[5], "ecf_sweep": values[6],
+            "peak_revolver": values[7], "opening_liquidity": values[8],
+            "subsequent_minimum_liquidity": values[9], "all_in_minimum_liquidity": values[10],
+            "maximum_leverage": values[11], "minimum_coverage": values[12],
+            "first_warning": values[13], "first_breach": values[14], "first_draw_shutoff": values[15],
+            "first_payment_failure": values[16], "common_horizon_ending_debt": values[17],
+            "maturity_gap": values[18], "unpaid_obligations": values[19],
+        })
+    set_cell(document, "Assumptions", "D4", "Base")
+    document.calculateAll()
+    configure_print(document)
+    document.calculateAll()
+    document.store()
+    return captures
+
+
+def parity(document) -> dict[str, object]:
+    return {
+        "fy2024_lender_base_ebitda": cell_value(document, "Credit Adjustments", "D14"),
+        "fy2025_lender_base_ebitda": cell_value(document, "Credit Adjustments", "E14"),
+        "opening_total_funded_debt": cell_value(document, "Transaction", "D17"),
+        "opening_leverage": cell_value(document, "Transaction", "D18"),
+        "selected_all_in_liquidity": cell_value(document, "Scenario Comparison", "P12"),
+        "selected_common_horizon_debt": cell_value(document, "Scenario Comparison", "W12"),
+        "selected_maturity_gap": cell_value(document, "Scenario Comparison", "X12"),
+        "moderate_unmitigated_maturity_gap": cell_value(document, "Scenario Comparison", "X13"),
+        "moderate_mitigated_maturity_gap": cell_value(document, "Scenario Comparison", "X14"),
+        "severe_unmitigated_maturity_gap": cell_value(document, "Scenario Comparison", "X15"),
+        "severe_mitigated_maturity_gap": cell_value(document, "Scenario Comparison", "X16"),
+        "existing_common_horizon_debt": cell_value(document, "Transaction", "E22"),
+        "existing_maturity_gap": cell_value(document, "Transaction", "F22"),
+        "reference_maturity_gap": cell_value(document, "Transaction", "F24"),
+        "sources_uses_difference": cell_value(document, "Transaction", "D12"),
+        "closing_coverage": cell_value(document, "Credit Summary", "D26"),
+    }
+
+
+def workbook_checks(document) -> list[dict[str, object]]:
+    return [
+        {
+            "check": cell_value(document, "Checks", f"C{row}"),
+            "status": cell_value(document, "Checks", f"G{row}"),
+        }
+        for row in range(7, 39)
+    ]
+
+
+def dynamic_tests(document) -> dict[str, object]:
+    results: list[dict[str, object]] = []
+
+    def add(name: str, passed: bool, observed: object) -> None:
+        results.append({"test": name, "status": "PASS" if passed else "FAIL", "observed": observed})
+
+    set_cell(document, "Assumptions", "D4", "Base")
+    document.calculateAll()
+    baseline = tuple(cell_value(document, "Scenario Comparison", address) for address in ("F5", "I5", "J5", "L5", "P5", "Q5", "X5"))
+    historical = document.Sheets.getByName("Historicals").getCellRangeByName("C7:N50").getDataArray()
+
+    set_cell(document, "Assumptions", "D4", "Moderate unmitigated"); document.calculateAll()
+    moderate = cell_value(document, "Scenario Comparison", "F5")
+    add("scenario selector updates EBITDA", moderate != baseline[0], moderate)
+    set_cell(document, "Assumptions", "D4", "Severe unmitigated"); document.calculateAll()
+    severe = cell_value(document, "Scenario Comparison", "F5")
+    add("severe EBITDA below moderate", isinstance(severe, float) and severe < moderate, severe)
+    add("same debt schedule updates", cell_value(document, "Debt Schedule", "D4") == "Severe unmitigated", cell_value(document, "Debt Schedule", "D4"))
+    add("historicals remain fixed", historical == document.Sheets.getByName("Historicals").getCellRangeByName("C7:N50").getDataArray(), "unchanged")
+
+    set_cell(document, "Assumptions", "D4", "Base"); document.calculateAll()
+    base_amort = float(cell_value(document, "Assumptions", "D18")); base_gap = float(cell_value(document, "Scenario Comparison", "X5"))
+    set_cell(document, "Assumptions", "D18", base_amort + 0.025); document.calculateAll()
+    add("amortization changes maturity gap", float(cell_value(document, "Scenario Comparison", "X5")) < base_gap, cell_value(document, "Scenario Comparison", "X5"))
+    set_cell(document, "Assumptions", "D18", base_amort)
+
+    base_term = float(cell_value(document, "Assumptions", "D12")); set_cell(document, "Assumptions", "D12", base_term + 5); document.calculateAll()
+    add("term amount changes opening term", abs(float(cell_value(document, "Debt Schedule", "J12")) - (base_term + 5)) < 0.001, cell_value(document, "Debt Schedule", "J12"))
+    set_cell(document, "Assumptions", "D12", base_term)
+    base_contribution = float(cell_value(document, "Assumptions", "D13")); base_debt = float(cell_value(document, "Transaction", "D17"))
+    set_cell(document, "Assumptions", "D13", base_contribution + 5); document.calculateAll()
+    add("non-debt contribution reduces opening debt", float(cell_value(document, "Transaction", "D17")) < base_debt, cell_value(document, "Transaction", "D17"))
+    set_cell(document, "Assumptions", "D13", base_contribution)
+
+    base_spread = float(cell_value(document, "Assumptions", "D20")); base_interest = float(cell_value(document, "Scenario Comparison", "J5"))
+    set_cell(document, "Assumptions", "D20", base_spread + 0.01); document.calculateAll()
+    add("interest spread changes cash interest", float(cell_value(document, "Scenario Comparison", "J5")) > base_interest, cell_value(document, "Scenario Comparison", "J5"))
+    set_cell(document, "Assumptions", "D20", base_spread)
+    set_cell(document, "Assumptions", "D21", -0.10); document.calculateAll()
+    add("EBITDA overlay changes EBITDA", float(cell_value(document, "Scenario Comparison", "F5")) < baseline[0], cell_value(document, "Scenario Comparison", "F5"))
+    set_cell(document, "Assumptions", "D21", 0)
+    set_cell(document, "Assumptions", "D23", 5); document.calculateAll()
+    add("DSO change reduces CFADS", float(cell_value(document, "Scenario Comparison", "I5")) < baseline[1], cell_value(document, "Scenario Comparison", "I5"))
+    set_cell(document, "Assumptions", "D23", 0)
+
+    opening_debt = float(cell_value(document, "Transaction", "D17"))
+    exact_adjustment = opening_debt / (3.5 * 225.344) - 1
+    set_cell(document, "Assumptions", "D21", exact_adjustment); document.calculateAll()
+    add("exact leverage boundary is not breach", cell_value(document, "Covenants", "V8") != "BREACH", cell_value(document, "Covenants", "V8"))
+    set_cell(document, "Assumptions", "D21", exact_adjustment - 0.0001); document.calculateAll()
+    add("above leverage boundary breaches", cell_value(document, "Covenants", "V8") == "BREACH", cell_value(document, "Covenants", "V8"))
+    set_cell(document, "Assumptions", "D21", -1); document.calculateAll()
+    add("zero EBITDA is N/M", cell_value(document, "Covenants", "I8") == "N/M", cell_value(document, "Covenants", "I8"))
+    set_cell(document, "Assumptions", "D21", -2); document.calculateAll()
+    add("negative EBITDA is N/M", cell_value(document, "Covenants", "I8") == "N/M", cell_value(document, "Covenants", "I8"))
+    set_cell(document, "Assumptions", "D21", 0)
+
+    base_rate = float(cell_value(document, "Assumptions", "D19")); set_cell(document, "Assumptions", "D19", ""); document.calculateAll()
+    add("missing cash interest is N/D", cell_value(document, "Covenants", "O12") == "N/D", cell_value(document, "Covenants", "O12"))
+    set_cell(document, "Assumptions", "D19", 0); document.calculateAll()
+    add("zero cash interest is N/M", cell_value(document, "Covenants", "O12") == "N/M", cell_value(document, "Covenants", "O12"))
+    set_cell(document, "Assumptions", "D19", -0.01); document.calculateAll()
+    add("negative cash interest is N/M", cell_value(document, "Covenants", "O12") == "N/M", cell_value(document, "Covenants", "O12"))
+    set_cell(document, "Assumptions", "D19", base_rate)
+
+    set_cell(document, "Assumptions", "D25", -500); document.calculateAll()
+    add("liquidity overlay can exhaust revolver", float(cell_value(document, "Scenario Comparison", "P5")) <= 0.001, cell_value(document, "Scenario Comparison", "P5"))
+    set_cell(document, "Assumptions", "D25", 0)
+    set_cell(document, "Assumptions", "D4", "Moderate Phase 7 covenant-linked no-waiver"); document.calculateAll()
+    add("covenant-linked draw shutoff is visible", str(cell_value(document, "Scenario Comparison", "U5")) not in {"", "N/D"}, cell_value(document, "Scenario Comparison", "U5"))
+
+    set_cell(document, "Assumptions", "D4", "Base"); document.calculateAll()
+    base_sweep = float(cell_value(document, "Scenario Comparison", "L5")); set_cell(document, "Assumptions", "D26", 0); document.calculateAll()
+    add("ECF sweep assumption changes sweep", float(cell_value(document, "Scenario Comparison", "L5")) < base_sweep, cell_value(document, "Scenario Comparison", "L5"))
+    set_cell(document, "Assumptions", "D26", 0.5)
+    set_cell(document, "Assumptions", "D24", 400); document.calculateAll()
+    add("cash-floor safeguard suppresses sweep", float(cell_value(document, "Scenario Comparison", "L5")) <= base_sweep, cell_value(document, "Scenario Comparison", "L5"))
+    set_cell(document, "Assumptions", "D24", 25)
+
+    set_cell(document, "Assumptions", "D12", base_term + 1); document.calculateAll()
+    add("snapshot stale flag activates", cell_value(document, "Scenario Comparison", "AE12") == "STALE", cell_value(document, "Scenario Comparison", "AE12"))
+    set_cell(document, "Assumptions", "D12", base_term); set_cell(document, "Assumptions", "D4", "Base"); document.calculateAll()
+    restored = tuple(cell_value(document, "Scenario Comparison", address) for address in ("F5", "I5", "J5", "L5", "P5", "Q5", "X5"))
+    add("Base parity restored", all(abs(float(a) - float(b)) < 0.002 for a, b in zip(restored, baseline)), restored)
+    add("final scenario restored to Base", cell_value(document, "Assumptions", "D4") == "Base", cell_value(document, "Assumptions", "D4"))
+    failed = [row for row in results if row["status"] != "PASS"]
+    return {"dynamic_status": "PASS" if not failed else "FAIL", "test_count": len(results), "tests": results}
+
+
+def main() -> None:
+    if len(sys.argv) != 4 or sys.argv[1] not in {"capture", "inspect", "dynamic"}:
+        raise SystemExit("usage: recalculate-phase8.py capture|inspect|dynamic workbook.xlsx report.json")
+    mode, workbook, report = sys.argv[1], Path(sys.argv[2]), Path(sys.argv[3])
+    profile = Path(tempfile.mkdtemp(prefix="quanex-lo-profile-"))
+    process = None
+    document = None
+    try:
+        process, desktop = connect_office(profile)
+        document = open_workbook(desktop, workbook)
+        document.calculateAll()
+        output: dict[str, object] = {"engine": ENGINE}
+        if mode == "capture":
+            output["captures"] = capture(document)
+        elif mode == "dynamic":
+            output.update(dynamic_tests(document))
+        else:
+            configure_print(document)
+            document.calculateAll()
+            document.store()
+        output["final_scenario"] = cell_value(document, "Assumptions", "D4")
+        output["parity"] = parity(document)
+        output["checks"] = workbook_checks(document)
+        report.write_text(json.dumps(output, indent=2, default=str), encoding="utf-8")
+        print(json.dumps({"mode": mode, "engine": ENGINE, "status": output.get("dynamic_status", "PASS")}))
+    finally:
+        if document is not None:
+            document.close(True)
+        if process is not None:
+            process.terminate()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+        shutil.rmtree(profile, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    main()

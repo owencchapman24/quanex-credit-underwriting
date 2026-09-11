@@ -10,6 +10,12 @@ Reported history and approved prior-phase calculated values are imported with so
 
 ## Scenario captures and engine
 
-The workbook is authored with the bundled `@oai/artifact-tool` runtime and recalculated by LibreOffice 26.8.0.3 because Microsoft Excel is not installed. The capture workflow selects each of nine approved cases, fully recalculates, stores headline values and signatures, restores Base, recalculates and saves. Captures are snapshots, not parallel live forecasts. A formula-driven stale flag compares each captured signature with the current input signature.
+The workbook is authored with the bundled `@oai/artifact-tool` runtime and reproducibly recalculated by LibreOffice 26.8.0.3. Microsoft Excel for Microsoft 365 provides a separate compatibility gate. The capture workflow selects each of nine approved cases, fully recalculates, stores headline values and signatures, restores Base, recalculates and saves. Captures are snapshots, not parallel live forecasts. A formula-driven stale flag compares each captured signature with the current input signature.
+
+## Post-commit Excel compatibility correction
+
+The first desktop-Excel opening of commit `b52141dadeb91362cac7cece9b31ec0f3e573534` reported a removed formula record in `sheet14.xml`. Package mapping identifies that part as `Checks`; the exact incompatible record was `Checks!G20`, whose `COUNTIF` used an inline array constant as the range argument. LibreOffice evaluated that permissive extension, but Excel requires `COUNTIF`'s first argument to be a range. The builder now expresses the same nine-value membership test with ordinary `OR` comparisons. No business calculation depends on `Checks`.
+
+Microsoft Excel for Microsoft 365 version 16.0 build 20326 opened the corrected workbook normally, performed a full calculation rebuild, changed the selector to Moderate unmitigated, restored Base, saved a disposable copy, and reopened that copy without repair. All 2,771 cell formulas and all 66 Checks formulas survived, and no recovery log was generated.
 
 Missing closing cash interest and unresolved legal or diligence items remain `N/D`, `Pending information`, or `Condition precedent`. Zero and nonpositive denominators display `N/M`. The separate book-cash diagnostic is not covenant or lender net leverage. The Recovery sheet remains pending Phase 9. No post-cutoff evidence is added.

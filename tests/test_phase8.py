@@ -99,7 +99,8 @@ class Phase8WorkbookTests(unittest.TestCase):
         checkpoint = rows(phase8.RAW / "STARTING_CHECKPOINT.csv")[0]
         self.assertEqual(checkpoint["repository"], "owencchapman24/quanex-credit-underwriting")
         self.assertEqual(checkpoint["branch"], "main")
-        self.assertEqual(checkpoint["local_head"], phase8.APPROVED_PHASE7_COMMIT)
+        self.assertEqual(checkpoint["approved_phase8_commit"], phase8.APPROVED_PHASE8_COMMIT)
+        self.assertIn(checkpoint["local_head"], {phase8.APPROVED_PHASE7_COMMIT, phase8.APPROVED_PHASE8_COMMIT})
         self.assertEqual(checkpoint["information_cutoff"], "2025-12-15")
 
     def test_02_workbook_opens_and_has_exact_sheet_order(self) -> None:
@@ -112,8 +113,17 @@ class Phase8WorkbookTests(unittest.TestCase):
     def test_03_no_external_workbook_links(self) -> None:
         self.assertFalse([name for name in self.archive.namelist() if name.startswith("xl/externalLinks/")])
 
+    def test_03a_sheet14_is_checks_and_formulas_are_excel_compatible(self) -> None:
+        structure = phase8.workbook_structure()
+        self.assertEqual(structure["sheet_paths"]["Checks"], "xl/worksheets/sheet14.xml")
+        self.assertEqual(structure["formula_counts_by_sheet"]["Checks"], 66)
+        self.assertEqual(structure["excel_formula_compatibility_issues"], [])
+        selector_check = self.formula("Checks", "G20")
+        self.assertTrue(selector_check.startswith("IF(OR("))
+        self.assertNotIn("COUNTIF({", selector_check.upper())
+
     def test_04_native_formula_population(self) -> None:
-        self.assertGreaterEqual(phase8.workbook_structure()["formula_count"], 900)
+        self.assertEqual(phase8.workbook_structure()["formula_count"], 2771)
         for sheet in ("Transaction", "Forecast", "Debt Schedule", "Liquidity", "Covenants"):
             self.assertIn("<f", self.xml_text(sheet), sheet)
 

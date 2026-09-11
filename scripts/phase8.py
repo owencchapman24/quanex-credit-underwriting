@@ -33,6 +33,7 @@ PROCESSED = DATA / "processed"
 DOCS = ROOT / "docs" / "phase-8"
 MODEL = ROOT / "model" / "Quanex_Credit_Underwriting.xlsx"
 APPROVED_PHASE7_COMMIT = "58e1b83a644021b785162d851e1539dd65dff9f5"
+APPROVED_PHASE8_COMMIT = "b52141dadeb91362cac7cece9b31ec0f3e573534"
 NODE = Path.home() / ".cache" / "codex-runtimes" / "codex-primary-runtime" / "dependencies" / "node" / "bin" / "node.exe"
 NODE_MODULES = Path.home() / ".cache" / "codex-runtimes" / "codex-primary-runtime" / "dependencies" / "node" / "node_modules"
 PROGRAM_FILES = Path(os.environ.get("ProgramFiles", "Program Files"))
@@ -246,6 +247,7 @@ def build_starting_checkpoint() -> None:
     write_csv(RAW / "STARTING_CHECKPOINT.csv", [{
         "repository": "owencchapman24/quanex-credit-underwriting",
         "branch": "main", "approved_phase7_commit": APPROVED_PHASE7_COMMIT,
+        "approved_phase8_commit": APPROVED_PHASE8_COMMIT,
         "local_head": git_head(), "source_input_signature": source_signature(),
         "information_cutoff": "2025-12-15", "hypothetical_closing": "2026-01-31",
         "calculation_engine": "LibreOffice 26.8.0.3",
@@ -316,20 +318,59 @@ def workbook_xml() -> tuple[zipfile.ZipFile, ET.Element]:
 
 def workbook_structure() -> dict[str, object]:
     archive, root = workbook_xml()
-    ns = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main", "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships"}
-    sheets = [node.attrib["name"] for node in root.findall("m:sheets/m:sheet", ns)]
+    ns = {
+        "m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
+        "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+        "p": "http://schemas.openxmlformats.org/package/2006/relationships",
+    }
+    relationships = ET.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
+    targets = {node.attrib["Id"]: node.attrib["Target"] for node in relationships.findall("p:Relationship", ns)}
+    sheet_paths: dict[str, str] = {}
+    for node in root.findall("m:sheets/m:sheet", ns):
+        target = targets[node.attrib[f"{{{ns['r']}}}id"]].lstrip("/")
+        sheet_paths[node.attrib["name"]] = target if target.startswith("xl/") else f"xl/{target}"
+    sheets = list(sheet_paths)
     formula_count = 0
+    formula_counts_by_sheet: dict[str, int] = {}
     checks_dependencies = []
     formula_errors = []
-    for name in archive.namelist():
-        if name.startswith("xl/worksheets/sheet") and name.endswith(".xml"):
-            text = archive.read(name).decode("utf-8")
-            formula_count += text.count("<f")
-            if name != "xl/worksheets/sheet14.xml" and ("Checks!" in text or "&apos;Checks&apos;!" in text):
-                checks_dependencies.append(name)
-            for token in ("#REF!", "#DIV/0!", "#VALUE!", "#NAME?", "#NUM!", "#NULL!", "#SPILL!", "#CALC!"):
-                if token in text:
-                    formula_errors.append(f"{name}:{token}")
+    excel_formula_issues: list[dict[str, str]] = []
+    range_only_array = re.compile(
+        r"\b(?:COUNTIF|COUNTIFS|SUMIF|SUMIFS|AVERAGEIF|AVERAGEIFS)\s*\(\s*\{",
+        re.IGNORECASE,
+    )
+    for sheet, name in sheet_paths.items():
+        text = archive.read(name).decode("utf-8")
+        xml = ET.fromstring(text)
+        formulas = xml.findall(".//m:f", ns)
+        formula_counts_by_sheet[sheet] = len(formulas)
+        formula_count += len(formulas)
+        if sheet != "Checks" and ("Checks!" in text or "&apos;Checks&apos;!" in text):
+            checks_dependencies.append(name)
+        for cell in xml.findall(".//m:c", ns):
+            formula_node = cell.find("m:f", ns)
+            if formula_node is None:
+                continue
+            formula = formula_node.text or ""
+            if formula.startswith("="):
+                excel_formula_issues.append({
+                    "sheet": sheet, "cell": cell.attrib.get("r", ""),
+                    "rule": "OOXML formula text must omit the leading equals sign", "formula": formula,
+                })
+            if range_only_array.search(formula):
+                excel_formula_issues.append({
+                    "sheet": sheet, "cell": cell.attrib.get("r", ""),
+                    "rule": "Excel range-only criteria function cannot use an inline array constant as its range argument",
+                    "formula": formula,
+                })
+            if re.search(r"[\x00-\x08\x0B\x0C\x0E-\x1F]", formula):
+                excel_formula_issues.append({
+                    "sheet": sheet, "cell": cell.attrib.get("r", ""),
+                    "rule": "formula contains an XML-disallowed control character", "formula": formula,
+                })
+        for token in ("#REF!", "#DIV/0!", "#VALUE!", "#NAME?", "#NUM!", "#NULL!", "#SPILL!", "#CALC!"):
+            if token in text:
+                formula_errors.append(f"{name}:{token}")
     external_links = [name for name in archive.namelist() if name.startswith("xl/externalLinks/")]
     charts = [name for name in archive.namelist() if name.startswith("xl/charts/chart") and name.endswith(".xml")]
     calc = root.find("m:calcPr", ns)
@@ -337,7 +378,10 @@ def workbook_structure() -> dict[str, object]:
     full_calc = calc.attrib.get("fullCalcOnLoad", "") if calc is not None else ""
     archive.close()
     return {
-        "sheets": sheets, "formula_count": formula_count, "checks_dependencies": checks_dependencies,
+        "sheets": sheets, "sheet_paths": sheet_paths, "formula_count": formula_count,
+        "formula_counts_by_sheet": formula_counts_by_sheet,
+        "excel_formula_compatibility_issues": excel_formula_issues,
+        "checks_dependencies": checks_dependencies,
         "formula_errors": formula_errors, "external_links": external_links, "chart_count": len(charts),
         "calculation_mode": calculation_mode, "full_calc_on_load": full_calc,
     }
@@ -361,7 +405,9 @@ def validate_workbook(engine_report: dict[str, object] | None = None) -> list[di
         })
 
     add("required sheet order", structure["sheets"] == required, " | ".join(structure["sheets"]), " | ".join(required))
-    add("native formula population", int(structure["formula_count"]) >= 900, structure["formula_count"], ">=900")
+    add("sheet14 maps to Checks", structure["sheet_paths"].get("Checks") == "xl/worksheets/sheet14.xml", structure["sheet_paths"].get("Checks"), "xl/worksheets/sheet14.xml")
+    add("native cell formula count", int(structure["formula_count"]) == 2771, structure["formula_count"], 2771)
+    add("Excel-compatible formula serialization", not structure["excel_formula_compatibility_issues"], len(structure["excel_formula_compatibility_issues"]), 0)
     add("no external workbook links", not structure["external_links"], len(structure["external_links"]), 0)
     add("Checks is terminal", not structure["checks_dependencies"], len(structure["checks_dependencies"]), 0)
     add("no cached formula errors", not structure["formula_errors"], len(structure["formula_errors"]), 0)
@@ -453,7 +499,13 @@ Reported history and approved prior-phase calculated values are imported with so
 
 ## Scenario captures and engine
 
-The workbook is authored with the bundled `@oai/artifact-tool` runtime and recalculated by LibreOffice 26.8.0.3 because Microsoft Excel is not installed. The capture workflow selects each of nine approved cases, fully recalculates, stores headline values and signatures, restores Base, recalculates and saves. Captures are snapshots, not parallel live forecasts. A formula-driven stale flag compares each captured signature with the current input signature.
+The workbook is authored with the bundled `@oai/artifact-tool` runtime and reproducibly recalculated by LibreOffice 26.8.0.3. Microsoft Excel for Microsoft 365 provides a separate compatibility gate. The capture workflow selects each of nine approved cases, fully recalculates, stores headline values and signatures, restores Base, recalculates and saves. Captures are snapshots, not parallel live forecasts. A formula-driven stale flag compares each captured signature with the current input signature.
+
+## Post-commit Excel compatibility correction
+
+The first desktop-Excel opening of commit `b52141dadeb91362cac7cece9b31ec0f3e573534` reported a removed formula record in `sheet14.xml`. Package mapping identifies that part as `Checks`; the exact incompatible record was `Checks!G20`, whose `COUNTIF` used an inline array constant as the range argument. LibreOffice evaluated that permissive extension, but Excel requires `COUNTIF`'s first argument to be a range. The builder now expresses the same nine-value membership test with ordinary `OR` comparisons. No business calculation depends on `Checks`.
+
+Microsoft Excel for Microsoft 365 version 16.0 build 20326 opened the corrected workbook normally, performed a full calculation rebuild, changed the selector to Moderate unmitigated, restored Base, saved a disposable copy, and reopened that copy without repair. All 2,771 cell formulas and all 66 Checks formulas survived, and no recovery log was generated.
 
 Missing closing cash interest and unresolved legal or diligence items remain `N/D`, `Pending information`, or `Condition precedent`. Zero and nonpositive denominators display `N/M`. The separate book-cash diagnostic is not covenant or lender net leverage. The Recovery sheet remains pending Phase 9. No post-cutoff evidence is added.
 """, encoding="utf-8")
@@ -472,6 +524,10 @@ The workbook is not a lender commitment, official compliance certificate, final 
 The Phase 8 workflow builds the workbook with the bundled artifact runtime, recalculates every approved scenario in LibreOffice 26.8.0.3, captures comparisons, restores Base, saves, and then validates structure and cached results. USD-million and ratio parity use a 0.002 tolerance.
 
 Controls cover the exact 14-sheet order, native formulas and charts, terminal `Checks`, external links, cached formula errors, calculation mode, 32 workbook checks, Base restoration, 15 Python-to-workbook numeric points, and closing coverage remaining `N/D`. The disposable dynamic copy tests scenario changes, fixed historicals, term size, contribution, amortization, rate and spread, EBITDA, DSO, exact covenant boundaries, missing/zero/negative denominators, revolver exhaustion, draw shutoff, cash-floor and sweep safeguards, stale capture status, and full Base restoration.
+
+The post-commit Excel compatibility control maps `sheet14.xml` to `Checks`, rejects OOXML formula text with a leading equals sign, rejects inline array constants passed to range-only criteria functions, and retains all 66 Checks formulas after export and LibreOffice recalculation. The original validation reported 2,838 formulas by counting every worksheet XML tag beginning with `<f`; that total included 67 non-cell `formula`, `formula1`, or `formula2` nodes used by formatting or validation. The corrected exact count is 2,771 cell formula nodes before and after the compatibility fix. The original normalized fingerprint was `12589f4c34975118fad1aea3ddb83de8f67b4521f33307104ef1bd42efb07dd7`; the corrected fingerprint is `7dae55edc1d7fbb7ae15c04ff8173a5e610e75c31f4a6c75ad2c72e4eb078635`. The fingerprint changed because the intended Checks formula text and its source generator changed.
+
+Microsoft Excel for Microsoft 365 version 16.0 build 20326 opened the corrected workbook without repair, ran a full calculation rebuild, updated a non-Base scenario, restored Base, saved, closed, and reopened a disposable copy. Formula counts and the Base output remained intact, and no recovery log was generated. Run `powershell -ExecutionPolicy Bypass -NoProfile -File scripts/validate-phase8-excel.ps1` for this separate Excel gate.
 
 All sheets are rendered to temporary PNG previews through the artifact runtime and inspected for formulas, styles, hierarchy, widths, status text and chart placement. LibreOffice applies bounded print areas, landscape orientation on wide schedules, fit-to-width settings, and repeated header rows on long tables.
 
@@ -523,8 +579,12 @@ The workbook preserves the approved Phase 7 provisional structure. The condition
 
 
 def build() -> dict[str, object]:
-    if git_head() != APPROVED_PHASE7_COMMIT:
-        raise Phase8Error(f"HEAD must remain at approved Phase 7 commit {APPROVED_PHASE7_COMMIT}")
+    head = git_head()
+    approved = head in {APPROVED_PHASE7_COMMIT, APPROVED_PHASE8_COMMIT} or run(
+        ["git", "merge-base", "--is-ancestor", APPROVED_PHASE8_COMMIT, head], check=False,
+    ).returncode == 0
+    if not approved:
+        raise Phase8Error(f"HEAD is not the approved Phase 7/8 checkpoint or a descendant: {head}")
     if run(["git", "branch", "--show-current"]).stdout.strip() != "main":
         raise Phase8Error("Phase 8 must run on main")
     build_starting_checkpoint()

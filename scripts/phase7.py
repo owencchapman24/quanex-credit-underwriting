@@ -1927,6 +1927,7 @@ def validate_changed_paths() -> None:
     allowed_exact = {
         "README.md", "scripts/phase4.py", "scripts/phase5.py", "scripts/phase6.py", "scripts/phase7.py",
         "scripts/phase8.py", "scripts/build-phase8.mjs", "scripts/recalculate-phase8.py",
+        "scripts/validate-phase8-excel.ps1",
         "tests/test_phase6.py", "tests/test_phase7.py", "tests/test_phase8.py",
         "model/Quanex_Credit_Underwriting.xlsx",
     }

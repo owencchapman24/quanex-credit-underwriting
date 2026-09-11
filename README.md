@@ -246,8 +246,9 @@ stale-aware comparison captures, and one authoritative forecast, debt,
 liquidity and covenant chain. The workbook uses 24 monthly debt/liquidity
 periods followed by 12 non-overlapping quarters, native charts, bounded print
 areas, repeated schedule headers, a source register, and terminal checks.
-LibreOffice 26.8.0.3 performs the required full recalculation and saves the Base
-scenario because Microsoft Excel is not installed on this desktop.
+LibreOffice 26.8.0.3 performs the reproducible full recalculation and saves the
+Base scenario. Microsoft Excel for Microsoft 365 provides a separate
+compatibility gate for the final workbook.
 
 Reproduce and validate with:
 
@@ -255,6 +256,7 @@ Reproduce and validate with:
 python scripts/phase8.py all
 python scripts/phase8.py validate
 python scripts/phase8.py dynamic
+powershell -ExecutionPolicy Bypass -NoProfile -File scripts/validate-phase8-excel.ps1
 python -m unittest discover -s tests -v
 ```
 

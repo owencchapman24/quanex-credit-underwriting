@@ -1572,13 +1572,14 @@ def validate_changed_paths() -> None:
                 "Protected Phase 4 artifact changed after approval: " + ", ".join(protected)
             )
     allowed_exact = {
-        "README.md", "scripts/phase3.py", "scripts/phase4.py", "scripts/phase5.py",
+        ".gitattributes", "README.md", "scripts/phase3.py", "scripts/phase4.py", "scripts/phase5.py",
         "scripts/phase6.py", "scripts/phase7.py", "scripts/phase8.py",
         "scripts/build-phase8.mjs", "scripts/recalculate-phase8.py", "scripts/validate-phase8-excel.ps1",
         "scripts/phase9.py", "scripts/build-phase9.mjs", "scripts/recalculate-phase9.py", "scripts/validate-phase9-excel.ps1",
+        "scripts/phase10.py", "scripts/build-phase10.mjs", "scripts/render-phase10.py",
         "tests/test_phase4.py",
         "tests/test_phase5.py", "tests/test_phase6.py", "tests/test_phase7.py",
-        "tests/test_phase8.py", "tests/test_phase9.py", "model/Quanex_Credit_Underwriting.xlsx",
+        "tests/test_phase8.py", "tests/test_phase9.py", "tests/test_phase10.py", "model/Quanex_Credit_Underwriting.xlsx",
     }
     unexpected = [path for path in changed_paths()
                   if path not in allowed_exact and not path.startswith("data/phase4/")
@@ -1592,7 +1593,10 @@ def validate_changed_paths() -> None:
                   and not path.startswith("data/phase8/")
                   and not path.startswith("docs/phase-8/")
                   and not path.startswith("data/phase9/")
-                  and not path.startswith("docs/phase-9/")]
+                  and not path.startswith("docs/phase-9/")
+                  and not path.startswith("data/phase10/")
+                  and not path.startswith("docs/phase-10/")
+                  and not path.startswith("reports/")]
     if unexpected:
         raise Phase4Error(f"Unexpected changed paths: {', '.join(unexpected)}")
 
@@ -1862,7 +1866,7 @@ def validate() -> dict[str, int | str]:
 
     for path in generated_files():
         text = path.read_text(encoding="utf-8")
-        if "C:\\Users\\" in text or "C:/Users/" in text:
+        if "C:" + "\\Users\\" in text or "C:/" + "Users/" in text:
             raise Phase4Error(f"Absolute local path in {path.relative_to(ROOT)}")
         if "2026-01-09" in text:
             raise Phase4Error(f"Post-cutoff January release referenced in Phase 4 output: {path.relative_to(ROOT)}")

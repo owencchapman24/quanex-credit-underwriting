@@ -521,13 +521,17 @@ def build_data() -> dict[str, object]:
     escalations = escalation_actions()
     ledger = build_source_ledger()
 
-    write_csv(RAW / "STARTING_CHECKPOINT.csv", [{
-        "repository": "owencchapman24/quanex-credit-underwriting", "branch": "main",
-        "approved_phase8_commit": APPROVED_PHASE8_COMMIT, "local_head": head,
-        "phase8_normalized_fingerprint": PHASE8_FINGERPRINT,
-        "source_input_signature": source_signature(), "information_cutoff": INFORMATION_CUTOFF,
-        "hypothetical_closing": "2026-01-31", "calculation_engines": "LibreOffice 26.8.0.3;Microsoft Excel 16.0 build 20326",
-    }])
+    # The committed file is the historical Phase 9 start checkpoint. Descendant-phase
+    # validation may regenerate Phase 9 data, but must not rewrite that checkpoint.
+    checkpoint_path = RAW / "STARTING_CHECKPOINT.csv"
+    if head == APPROVED_PHASE8_COMMIT or not checkpoint_path.is_file():
+        write_csv(checkpoint_path, [{
+            "repository": "owencchapman24/quanex-credit-underwriting", "branch": "main",
+            "approved_phase8_commit": APPROVED_PHASE8_COMMIT, "local_head": APPROVED_PHASE8_COMMIT,
+            "phase8_normalized_fingerprint": PHASE8_FINGERPRINT,
+            "source_input_signature": source_signature(), "information_cutoff": INFORMATION_CUTOFF,
+            "hypothetical_closing": "2026-01-31", "calculation_engines": "LibreOffice 26.8.0.3;Microsoft Excel 16.0 build 20326",
+        }])
     write_csv(RAW / "RECOVERY_ASSUMPTIONS.csv", assumptions)
     write_csv(RAW / "OWNER_REVIEW_DECISIONS.csv", decisions)
     write_csv(RAW / "MONITORING_TRIGGER_INPUTS.csv", monitors)

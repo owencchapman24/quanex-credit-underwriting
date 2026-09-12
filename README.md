@@ -277,7 +277,43 @@ proposed-assumption, or `N/D` classifications remain intact. The $62.619
 million amount is an other-funded-obligations deduction used once for
 conservative sensitivity, not a verified senior claim. The asset-realization
 analysis is a full consolidated-access ceiling case, not expected lender
-access. Phase 10 has not started and no final credit recommendation is made.
+access. Phase 10 converts the approved analytical record into an owner-reviewed
+credit-committee recommendation, committee brief, conditions and monitoring
+registers, and a decision-facing workbook summary. The project recommendation
+is Conditional Approval of a $635 million fully funded term facility and a
+$300 million revolver, with a bank hold of up to $50 million across both
+facilities, including a $29.898 million opening draw and a conditional $15
+million non-debt source. All 18 Phase 10 decisions have status `owner_reviewed`.
+This is not an actual bank approval, lender commitment, funding authorization,
+legal opinion, official risk grade, or official recovery estimate. Failure to deliver
+the conditional $15 million non-debt source, acceptable closing documentation,
+closing coverage evidence, or another material condition means no added debt
+and the modeled transaction should not close. The shortfall may not be replaced
+with more term debt, a larger revolver draw, covenant loosening, inaccessible
+cash, refinancing proceeds, an assumed waiver, or unsupported recovery. Mandatory
+fallback: retain or amend the existing facilities through a limited amendment or extension.
+
+Primary repayment is recurring operating cash after operating requirements,
+cash interest, cash taxes, working capital, necessary maintenance capex, and
+other required uses. Amortization and the ECF sweep are payment mechanisms.
+Cash and legally drawable revolver capacity are liquidity support only;
+refinancing is an unresolved, separately underwritten maturity dependency;
+collateral or business-sale recovery is the secondary backstop and official
+recovery remains `N/D`.
+
+At July 31, 2029, total funded debt is $495.368 million existing, $507.954
+million reference, and $514.754 million selected. Selected is $19.386 million
+higher than existing, so the refinance is not justified by faster same-horizon
+deleveraging. Ultimate bank-debt gaps are $432.749 million existing at August 1,
+2029 and $340.948 million reference / $324.780 million selected at January 31,
+2031; the selected gap benefits partly from about 18 additional months.
+
+Moderate unmitigated / mitigated leverage peaks at 4.4893x / 4.4670x, coverage
+bottoms at 3.2104x / 3.2168x, and liquidity remains $165.078 million / $168.937
+million. Both paths warn and breach on October 31, 2026; mitigation does not
+restore compliance, neither path exhausts liquidity or fails payment, and no
+automatic waiver is assumed. The `Elevated` assessment is project-specific and
+qualitative, not an official borrower classification.
 
 - [Phase 9 methodology](docs/phase-9/METHODOLOGY.md)
 - [Phase 9 recovery analysis](docs/phase-9/RECOVERY_ANALYSIS.md)
@@ -297,3 +333,31 @@ python -m unittest discover -s tests -v
 Phase 9 uses the Python standard library, the bundled `@oai/artifact-tool`,
 LibreOffice 26.8.0.3 and Microsoft Excel for Microsoft 365. It adds no external
 evidence and preserves the December 15, 2025 information cutoff.
+
+- [Phase 10 methodology](docs/phase-10/METHODOLOGY.md)
+- [Phase 10 decision rationale](docs/phase-10/DECISION_RATIONALE.md)
+- [Phase 10 credit memo](reports/credit_memo.md)
+- [Phase 10 committee brief](reports/committee_brief.md)
+- [Phase 10 owner-review register](data/phase10/raw/OWNER_REVIEW_DECISIONS.csv)
+- [Phase 10 source ledger](docs/phase-10/SOURCE_LEDGER.csv)
+- [Phase 11 bounded handoff](docs/phase-10/PHASE11_HANDOFF.md)
+
+Reproduce Phase 10 with:
+
+```powershell
+python scripts/phase10.py all
+python -m unittest discover -s tests -v
+python scripts/phase10.py verify
+```
+
+Phase 10 adds no external evidence or substantive post-cutoff information. It
+uses the standard library for deterministic data and workbook orchestration,
+the bundled `@oai/artifact-tool` for the existing workbook, and the bundled
+ReportLab/Pillow/pypdf runtime for the two PDF deliverables. The `verify`
+command runs mutating prior-phase checks in an isolated temporary repository
+and runs Excel and LibreOffice only against disposable workbook copies. It
+fails if the authoritative working-tree manifest or Git status changes. Phase
+11 and Phase 12 have not started.
+
+Repository PDF deliverables are explicitly classified as binary in
+`.gitattributes`; normal Git whitespace checks continue to apply to text files.

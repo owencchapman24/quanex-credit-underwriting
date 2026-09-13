@@ -1,0 +1,15 @@
+component,role,required_scope,required_version,tested_version,supply_method,platform,mandatory,notes
+Operating system,tested host,release QA,tested Windows environment,Windows 10 family,host operating system,Windows,yes for complete tested gate,Excel COM and PowerShell harnesses are Windows-only.
+Python,analytical orchestration and tests,all phases,3.14.7 tested; other versions untested,3.14.7,python executable,Windows tested,yes,Analytical Python scripts use only the standard library.
+pip,inventory only,none,not required by project workflow,26.2.1,Python installation,Windows tested,no,No project package installation is required.
+Node.js,workbook authoring runtime,Phase 8-10 workbook build,24.19.0 tested; other versions untested,24.19.0,Codex primary-runtime bundle,Windows tested,yes for workbook generation,Not required on PATH; existing scripts resolve the bundled executable.
+@oai/artifact-tool,XLSX authoring and structural inspection,Phase 8-10 workbook build,2.8.58+ tested,2.8.58+,Codex primary-runtime node_modules,Windows tested,yes for workbook generation,No project package.json is used.
+LibreOffice,"full recalculation, capture, and compatibility inspection",workbook canonicalization,26.8.0.3,26.8.0.3,desktop application,Windows tested,yes for approved workbook reproduction,Validation receives a disposable workbook copy.
+Microsoft Excel for Microsoft 365,separate compatibility gate,final release QA,16.0 build 20326,16.0 build 20326,desktop application,Windows only,yes for complete tested release gate,Not required for analytical CSV generation; validation receives a disposable copy.
+Windows PowerShell,Phase 0 and Excel validation,release QA,5.1.19041.6456,5.1.19041.6456,host operating system,Windows only,yes for complete tested gate,Use process-scoped ExecutionPolicy Bypass when required.
+Bundled Python,PDF/chart generation,Phase 10 documents,3.12.14,3.12.14,Codex primary-runtime bundle,Windows tested,yes for PDF regeneration,Separate from analytical Python.
+ReportLab,PDF generation,Phase 10 documents,4.4.9,4.4.9,bundled Python runtime,Windows tested,yes for PDF regeneration,No project requirements file is needed.
+Pillow,chart and document graphics,Phase 10 documents,12.3.0,12.3.0,bundled Python runtime,Windows tested,yes for Phase 10 graphics,Bundled dependency.
+pypdf,PDF metadata and text inspection,document QA,6.10.0,6.10.0,bundled Python runtime,Windows tested,yes for PDF inspection,Bundled dependency.
+pypdfium2 / PDFium,disposable all-page PDF rendering,document visual QA,5.13.0 / 153.0.7999.0,5.13.0 / 153.0.7999.0,bundled Python runtime,Windows tested,yes for automated page rendering,Renders only to an explicit temporary directory.
+Git,local disposable clone and integrity checks,Phase 11,installed version tested,2.55.0.windows.5,host application,Windows tested,yes,Clean build uses only a local clone; no remote fetch.

@@ -1930,7 +1930,8 @@ def validate_changed_paths() -> None:
         "scripts/validate-phase8-excel.ps1",
         "scripts/phase9.py", "scripts/build-phase9.mjs", "scripts/recalculate-phase9.py", "scripts/validate-phase9-excel.ps1",
         "scripts/phase10.py", "scripts/build-phase10.mjs", "scripts/render-phase10.py",
-        "tests/test_phase6.py", "tests/test_phase7.py", "tests/test_phase8.py", "tests/test_phase9.py", "tests/test_phase10.py",
+        "scripts/phase11.py", "scripts/render-phase11.py",
+        "tests/test_phase6.py", "tests/test_phase7.py", "tests/test_phase8.py", "tests/test_phase9.py", "tests/test_phase10.py", "tests/test_phase11.py",
         "model/Quanex_Credit_Underwriting.xlsx",
     }
     unexpected = [
@@ -1944,6 +1945,8 @@ def validate_changed_paths() -> None:
         and not path.startswith("docs/phase-9/")
         and not path.startswith("data/phase10/")
         and not path.startswith("docs/phase-10/")
+        and not path.startswith("data/phase11/")
+        and not path.startswith("docs/phase-11/")
         and not path.startswith("reports/")
     ]
     if unexpected:

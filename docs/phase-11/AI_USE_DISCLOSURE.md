@@ -1,0 +1,5 @@
+## AI use and analytical ownership
+
+I directed this project and retained responsibility for its underwriting conclusions. I approved the credit question and scope, reviewed the supporting evidence and reconciliations, determined the treatment of EBITDA adjustments, selected the scenario assumptions, evaluated accessible cash, sized the proposed facilities, designed the covenant package, assessed recovery limitations, and made the final recommendation. I also tested key workbook behavior in Microsoft Excel and reviewed the completed model, credit memo, committee brief, and validation results.
+
+AI tools accelerated portions of the implementation, including code drafting, repetitive extraction and normalization, workbook and report generation, test construction, and consistency checking. I reviewed and validated those outputs against the documented sources and controls. AI did not independently make the credit decision, determine the material underwriting judgments, or replace my responsibility for understanding and defending the analysis.

@@ -1,0 +1,2 @@
+decision_id,decision_name,review_status,decision_record,analytical_effect
+P11D-001,AI use and analytical ownership disclosure,owner_reviewed,docs/phase-11/AI_USE_DISCLOSURE.md,None; disclosure-only Phase 11 governance update

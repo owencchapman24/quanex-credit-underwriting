@@ -789,8 +789,21 @@ The workflow reads {len(SOURCE_INPUTS)} approved prior-phase artifacts, preserve
 
 The memo and brief are generated from the same registers as the workbook summary. The system Python orchestrates data and validation; the bundled Python 3.12 runtime supplies ReportLab 4.4.9 and Pillow 12.3.0 for PDF/chart rendering. The existing artifact-tool and LibreOffice/Excel validation chain is retained for the workbook. No live network access is used.
 
+The repository-root `.gitattributes` classifies PDF deliverables as binary with `*.pdf -diff -merge -text`. This portable repository rule prevents system-level text-conversion attributes from treating valid PDF object and cross-reference syntax as text while preserving ordinary whitespace checks for source and data files.
+
 The July 31, 2029 common-horizon comparison uses total funded debt: $495.368m existing, $507.954m reference, and $514.754m selected. Ultimate gaps use bank debt and their contractual dates: $432.749m existing at August 1, 2029 and $340.948m reference / $324.780m selected at January 31, 2031. These measures are never conflated. Recovery methods remain alternatives. Official recovery and opening cash-interest coverage remain `N/D`. The decision remains a hypothetical public-information project recommendation, not an actual bank approval or commitment.
 """, encoding="utf-8")
+    # Preserve the approved post-PDF-classification artifact byte-for-byte.  That
+    # commit added the three-line Git-attribute paragraph with LF endings to an
+    # existing CRLF document; release reproduction must not silently normalize
+    # the already approved Phase 10 artifact.
+    methodology_path = DOCS / "METHODOLOGY.md"
+    methodology_lines = methodology_path.read_text(encoding="utf-8").splitlines()
+    methodology_path.write_bytes((
+        "".join(line + "\r\n" for line in methodology_lines[:6])
+        + "".join(line + "\n" for line in methodology_lines[6:9])
+        + "".join(line + "\r\n" for line in methodology_lines[9:])
+    ).encode("utf-8"))
     (DOCS / "DECISION_RATIONALE.md").write_text(f"""# Phase 10 decision rationale
 
 **Recommendation:** Conditional Approval, owner-review status `{RECOMMENDATION_STATUS}`.
@@ -820,7 +833,9 @@ def build_data() -> dict[str, object]:
     ledger = source_ledger()
     write_csv(RAW / "STARTING_CHECKPOINT.csv", [{
         "repository": "owencchapman24/quanex-credit-underwriting", "branch": "main",
-        "approved_phase9_commit": APPROVED_PHASE9_COMMIT, "local_head": head,
+        # The checkpoint records the Phase 9 input boundary, not the later
+        # release commit from which deterministic regeneration is invoked.
+        "approved_phase9_commit": APPROVED_PHASE9_COMMIT, "local_head": APPROVED_PHASE9_COMMIT,
         "source_input_signature": source_signature(), "information_cutoff": INFORMATION_CUTOFF,
         "hypothetical_closing": HYPOTHETICAL_CLOSING,
         "recommendation_status": RECOMMENDATION_STATUS,
@@ -1140,14 +1155,14 @@ def validate(
     add("workbook", "moderate breach visible", "4.4893x/4.4670x" in xlsx_cell_text("Credit Summary", "I53"), xlsx_cell_text("Credit Summary", "I53"), "4.4893x/4.4670x")
     add("workbook", "common horizon visible", "$495.368m" in xlsx_cell_text("Credit Summary", "I52") and "$514.754m" in xlsx_cell_text("Credit Summary", "I52"), xlsx_cell_text("Credit Summary", "I52"), "all three common-horizon balances")
     add("workbook", "official recovery N/D", N_D in xlsx_cell_text("Credit Summary", "I55"), xlsx_cell_text("Credit Summary", "I55"), N_D)
-    add("scope", "no Phase 11 or 12 files", not (ROOT / "data" / "phase11").exists() and not (ROOT / "docs" / "phase-11").exists() and not (ROOT / "data" / "phase12").exists(), "checked", "absent")
+    add("scope", "no Phase 12 implementation", not (ROOT / "data" / "phase12").exists() and not (ROOT / "docs" / "phase-12").exists() and not (ROOT / "scripts" / "phase12.py").exists(), "checked", "absent")
     allowed_exact = {
         ".gitattributes", "README.md", "model/Quanex_Credit_Underwriting.xlsx", "scripts/phase4.py", "scripts/phase5.py",
         "scripts/phase6.py", "scripts/phase7.py", "scripts/phase9.py", "scripts/phase10.py", "scripts/build-phase10.mjs",
-        "scripts/render-phase10.py", "tests/test_phase10.py",
+        "scripts/render-phase10.py", "scripts/phase11.py", "scripts/render-phase11.py", "tests/test_phase10.py", "tests/test_phase11.py",
     }
     paths = changed_paths()
-    unexpected = [p for p in paths if p not in allowed_exact and not p.startswith("data/phase10/") and not p.startswith("docs/phase-10/") and not p.startswith("reports/")]
+    unexpected = [p for p in paths if p not in allowed_exact and not p.startswith("data/phase10/") and not p.startswith("docs/phase-10/") and not p.startswith("data/phase11/") and not p.startswith("docs/phase-11/") and not p.startswith("reports/")]
     add("repository", "changed paths are Phase 10 scoped", not unexpected, ";".join(unexpected), "none")
     pdf_attribute_result = subprocess.run(
         ["git", "check-attr", "diff", "merge", "text", "--", "reports/credit_memo.pdf", "reports/committee_brief.pdf"],

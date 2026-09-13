@@ -1,0 +1,12 @@
+link_id,source_path,target,link_type,status,resolution,notes
+P11L-001,README.md,reports/credit_memo.pdf,internal,PASS,reports/credit_memo.pdf,Repository-relative path exists.
+P11L-002,README.md,reports/committee_brief.pdf,internal,PASS,reports/committee_brief.pdf,Repository-relative path exists.
+P11L-003,README.md,model/Quanex_Credit_Underwriting.xlsx,internal,PASS,model/Quanex_Credit_Underwriting.xlsx,Repository-relative path exists.
+P11L-004,README.md,reports/charts/maturity_gap_comparison.png,internal,PASS,reports/charts/maturity_gap_comparison.png,Repository-relative path exists.
+P11L-005,README.md,docs/phase-11/REPRODUCIBILITY.md,internal,PASS,docs/phase-11/REPRODUCIBILITY.md,Repository-relative path exists.
+P11L-006,README.md,docs/phase-11/METHODOLOGY.md,internal,PASS,docs/phase-11/METHODOLOGY.md,Repository-relative path exists.
+P11L-007,README.md,docs/phase-11/REPRODUCIBILITY.md,internal,PASS,docs/phase-11/REPRODUCIBILITY.md,Repository-relative path exists.
+P11L-008,README.md,docs/phase-11/LIMITATIONS.md,internal,PASS,docs/phase-11/LIMITATIONS.md,Repository-relative path exists.
+P11L-009,README.md,docs/phase-11/AI_USE_DISCLOSURE.md,internal,PASS,docs/phase-11/AI_USE_DISCLOSURE.md,Repository-relative path exists.
+P11L-010,README.md,docs/phase-11/RELEASE_CHECKLIST.md,internal,PASS,docs/phase-11/RELEASE_CHECKLIST.md,Repository-relative path exists.
+P11L-011,release-health policy,approved external source URLs,external_policy,INFO,separate_non_analytical_check,SEC 403 is access-restricted when source identity and archived URL remain valid; no response content enters underwriting.

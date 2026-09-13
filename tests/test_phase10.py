@@ -303,8 +303,8 @@ class Phase10DeliverableTests(unittest.TestCase):
         self.assertTrue(checks)
         self.assertTrue(all(r["status"] == "PASS" for r in checks))
 
-    def test_no_phase11_or_phase12_implementation(self) -> None:
-        for path in (ROOT / "data/phase11", ROOT / "docs/phase-11", ROOT / "data/phase12", ROOT / "docs/phase-12"):
+    def test_no_phase12_implementation(self) -> None:
+        for path in (ROOT / "data/phase12", ROOT / "docs/phase-12", ROOT / "scripts/phase12.py", ROOT / "tests/test_phase12.py"):
             self.assertFalse(path.exists())
 
     def test_prior_analytical_artifacts_unchanged(self) -> None:

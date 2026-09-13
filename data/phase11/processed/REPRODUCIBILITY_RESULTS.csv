@@ -1,0 +1,7 @@
+reproducibility_id,test_name,status,observed,expected,notes
+P11R-001,local clone began at approved Phase 10,PASS,9fca23a949d1f8d8dee6f37906cb086ec6cda994,9fca23a949d1f8d8dee6f37906cb086ec6cda994,No new analytical evidence was retrieved.
+P11R-002,analytical reproduction required no network,PASS,0,0,No new analytical evidence was retrieved.
+P11R-003,deterministic artifacts exact,PASS,0,0,No new analytical evidence was retrieved.
+P11R-004,workbook normalized fingerprint,PASS,49c2dac4c4045f68200cd85c1c3b6a76acc6b7c219c4bef04c32c7846b20d42c,49c2dac4c4045f68200cd85c1c3b6a76acc6b7c219c4bef04c32c7846b20d42c,No new analytical evidence was retrieved.
+P11R-005,workbook semantic differences,PASS,0,0,No new analytical evidence was retrieved.
+P11R-006,disposable clone cleanup,PASS,disposable local no-hardlinks clone,temporary clone removed,No new analytical evidence was retrieved.

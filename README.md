@@ -2,7 +2,7 @@
 
 ## Credit question and final recommendation
 
-Should a lender support Quanex Building Products Corporation's hypothetical post-Tyman refinancing? The public-information underwriting recommendation is **Conditional Approval** of the selected structure, subject to the stated closing conditions, documentation, diligence, and monitoring requirements. All 18 Phase 10 decisions are `owner_reviewed`; this is a portfolio-project recommendation, not actual bank approval, a commitment, a legal opinion, an official rating, or an assertion of contractual compliance.
+Should a lender support Quanex Building Products Corporation's hypothetical post-Tyman refinancing? The public-information underwriting recommendation is **Conditional Approval — proceed with diligence and definitive documentation.** **No final commitment or funding authorization exists until all material conditions are satisfied.** All 18 Phase 10 decisions are `owner_reviewed`; this is a portfolio-project recommendation, not actual bank approval, a legal opinion, an official rating, or an assertion of contractual compliance.
 
 ## Transaction snapshot
 
@@ -22,9 +22,10 @@ Should a lender support Quanex Building Products Corporation's hypothetical post
 ## Decisive findings
 
 - Historical cash generation improved after the Tyman acquisition: FY2025 lender-base EBITDA was $225.344m, CFO was $164.897m, and CFO less capital expenditures was $102.255m. Acquisition comparability and the $302.284m goodwill impairment remain major cautions.
-- Opening funded debt is $727.517m and opening gross leverage is 3.2285x. Base all-in liquidity is $263.902m, a point-in-time opening measure rather than recurring annual cash generation.
-- At the July 31, 2029 common horizon, selected total funded debt is $514.754m, versus $495.368m under the existing facilities and $507.954m in the reference structure. The selected path is therefore not justified by faster same-horizon debt reduction.
-- Both moderate cases warn and breach on October 31, 2026; mitigation does not restore compliance. Severe cases exhaust liquidity and fail mandatory payments. The selected structure still has a $324.780m point-in-time bank-debt gap at January 31, 2031, so refinancing remains a material, separately underwritten dependency.
+- The October 31, 2025 historical reference is $641.250m bank debt plus $62.619m retained lease/other debt, or $703.869m total funded debt. At the January 31, 2026 projected closing, existing / reference / selected total funded debt is $732.517m / $742.517m / $727.517m. Selected is $5.000m below projected existing only because the conditional $15m non-debt source exceeds assumed $10m fees; if unavailable, resize, obtain another acceptable non-debt source, or do not close—never substitute debt.
+- Selected opening gross leverage is 3.2285x. Base all-in liquidity is $263.902m, a point-in-time opening measure rather than recurring annual cash generation.
+- At the July 31, 2029 common horizon, selected total funded debt is $514.754m, versus $495.368m under the existing facilities and $507.954m in the reference structure. Selected is $19.385m above existing, so the selected path is not justified by faster same-horizon debt reduction.
+- Both moderate cases warn and breach on October 31, 2026; maximum quarterly-test leverage is 4.4893x unmitigated and 4.4670x mitigated, and mitigation does not restore compliance. Severe cases exhaust liquidity and fail mandatory payments. The selected structure still has a $324.780m point-in-time bank-debt gap at January 31, 2031, so refinancing remains a material, separately underwritten dependency.
 
 ## Deliverables
 
@@ -86,3 +87,16 @@ I directed the project and retain responsibility for its underwriting conclusion
 - `tests/`: decision-relevant regression and release-readiness tests
 
 The repository has no license file. It is therefore all-rights-reserved by default pending an explicit owner licensing decision; see the [release checklist](docs/phase-11/RELEASE_CHECKLIST.md).
+
+## Phase 8 Excel underwriting model
+
+Phase 8 adds `model/Quanex_Credit_Underwriting.xlsx`, a 14-sheet formula-driven underwriting workbook with one live scenario selector, captured scenario comparisons, transaction, forecast, debt, liquidity, covenant, sensitivity, source and terminal-check views. LibreOffice 26.8.0.3 performs the required full recalculation and saves the Base scenario.
+
+Reproduce and validate with:
+
+```powershell
+python scripts/phase8.py all
+python -m unittest discover -s tests -v
+```
+
+The workbook preserves the approved Phase 7 provisional structure. The conditional $15 million source, closing cash interest, legal definitions and other diligence items remain unresolved. Recovery analysis remains pending Phase 9, and no final credit recommendation is made.

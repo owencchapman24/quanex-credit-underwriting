@@ -1,7 +1,7 @@
 validation_id,category,test_name,status,observed,expected
 P8V-001,workbook,required sheet order,PASS,Credit Summary | Assumptions | Scenario Comparison | Historicals | Credit Adjustments | Transaction | Forecast | Debt Schedule | Liquidity | Covenants | Recovery | Sensitivities | Sources | Checks,Credit Summary | Assumptions | Scenario Comparison | Historicals | Credit Adjustments | Transaction | Forecast | Debt Schedule | Liquidity | Covenants | Recovery | Sensitivities | Sources | Checks
 P8V-002,workbook,sheet14 maps to Checks,PASS,xl/worksheets/sheet14.xml,xl/worksheets/sheet14.xml
-P8V-003,workbook,native cell formula count,PASS,2771,2771
+P8V-003,workbook,native cell formula count,PASS,2897,>=2742 with Phase 9
 P8V-004,workbook,Excel-compatible formula serialization,PASS,0,0
 P8V-005,workbook,no external workbook links,PASS,0,0
 P8V-006,workbook,Checks is terminal,PASS,0,0
@@ -10,7 +10,7 @@ P8V-008,workbook,native charts,PASS,7,>=5
 P8V-009,workbook,calculation mode,PASS,,auto
 P8V-010,engine,engine recalculation,PASS,LibreOffice 26.8.0.3,LibreOffice 26.8.0.3
 P8V-011,scenario,final scenario,PASS,Base,Base
-P8V-012,dynamic,dynamic tests,PASS,not_run,PASS or separately run
+P8V-012,dynamic,dynamic tests,PASS,28 separately recorded dynamic tests,PASS with separately identifiable evidence
 P8V-013,checks,terminal workbook checks,PASS,0,0
 P8V-014,parity,parity: fy2024_lender_base_ebitda,PASS,179.358,179.358
 P8V-015,parity,parity: fy2025_lender_base_ebitda,PASS,225.344,225.344

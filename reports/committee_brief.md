@@ -1,11 +1,13 @@
 # Quanex credit committee brief
 
 **Information cutoff:** December 15, 2025 | **Hypothetical closing:** January 31, 2026
-**Recommendation:** **Conditional Approval** | **Owner-review status:** `owner_reviewed`
+**Recommendation:** **Conditional Approval — proceed with diligence and definitive documentation.** | **Owner-review status:** `owner_reviewed`
+
+**No final commitment or funding authorization exists until all material conditions are satisfied.**
 
 ## Decision
 
-**Conditional Approval** of a $635.000m fully funded term facility plus a $300.000m revolver, with a $29.898m opening draw, a bank hold up to $50.000m of combined commitments, and a conditional $15.000m non-debt source. The proposed refinancing is not justified by faster same-horizon debt reduction. It is supportable only for its maturity extension, liquidity structure, amortization, lender protections, and monitoring package, subject to acceptable final economics and documentation.
+Proceed with diligence and definitive documentation for a $635.000m fully funded term facility plus a $300.000m revolver, with a $29.898m opening draw, a bank hold up to $50.000m of combined commitments, and a conditional $15.000m non-debt source. At January 31, 2026, selected projected closing debt of $727.517m is $5.000m below projected existing debt of $732.517m only because the conditional source exceeds assumed $10m fees. If unavailable, resize, obtain another acceptable non-debt source, or do not close; never substitute debt. The refinancing is supportable for liquidity structure, maturity extension, amortization, ECF sweep, reporting, and intervention—not faster common-horizon deleveraging.
 
 ## Repayment and key metrics
 
@@ -27,11 +29,11 @@ FY2025 cash conversion recovered; Base services interim debt; opening liquidity 
 
 ## Decisive risks and downside
 
-Opening leverage is 3.2285x, close to the 3.25x warning; Tyman integration, margin, working capital, capex, and controls remain material. Moderate unmitigated/mitigated maximum leverage is 4.4893x / 4.4670x; minimum coverage is 3.2104x / 3.2168x; minimum liquidity remains $165.078m / $168.937m. Both paths warn and breach on October 31, 2026; mitigation does not restore compliance, neither modeled path exhausts liquidity or fails payment, and no automatic waiver is assumed. January 31, 2031 moderate-unmitigated / severe-unmitigated bank-debt gaps are $408.375m / $604.258m. Severe stress reaches zero liquidity and payment failure; mitigation delays but does not remove failure.
+Opening leverage is 3.2285x, close to the 3.25x warning; Tyman integration, margin, working capital, capex, and controls remain material. Moderate unmitigated/mitigated maximum quarterly-test leverage is 4.4893x / 4.4670x; minimum coverage is 3.2104x / 3.2168x; minimum liquidity remains $165.078m / $168.937m. Both paths warn and breach on October 31, 2026; mitigation does not restore compliance, neither modeled path exhausts liquidity or fails payment, and no automatic waiver is assumed. January 31, 2031 moderate-unmitigated / severe-unmitigated bank-debt gaps are $408.375m / $604.258m. Severe stress reaches zero liquidity and payment failure; mitigation delays but does not remove failure.
 
 The proposed covenant is intended to create early lender intervention while liquidity and payment capacity remain available. Conditional approval accepts the possibility of an early moderate-case covenant breach only because the structure preserves substantial liquidity, separates breach from payment failure, mandates reporting and corrective action, and does not assume an automatic waiver.
 
-At the July 31, 2029 common horizon, the selected structure leaves approximately $19.4 million more total funded debt than retaining the existing facilities. Quanex could therefore avoid refinancing fees and near-term debt expansion by retaining or amending its current financing. The lower selected maturity gap is achieved partly because the proposed facility remains outstanding approximately 18 months longer.
+The strongest counterargument is refinancing fees and unresolved economics, $19.385m more selected debt at the July 31, 2029 common horizon, October 2026 moderate breach, continued refinancing dependency, and a lower selected ultimate gap that benefits partly from approximately 18 additional months. Retain or amend remains mandatory if a material closing condition fails.
 
 ## Principal conditions and fallback
 

@@ -2,15 +2,17 @@
 
 **Committee date / information cutoff:** December 15, 2025
 **Hypothetical closing:** January 31, 2026
-**Recommendation:** **Conditional Approval**
+**Recommendation:** **Conditional Approval — proceed with diligence and definitive documentation.**
+
+**No final commitment or funding authorization exists until all material conditions are satisfied.**
 **Owner-review status:** `owner_reviewed`
 **Public-information case:** project recommendation only - not an actual bank approval, lender commitment, funding authorization, official compliance certificate, appraisal, legal opinion, official risk grade, or official recovery estimate.
 
 ## 1. Decision and exposure
 
-**Conditional Approval** of a $635.000m [P10M-017] fully funded term facility and $300.000m [P10M-018] revolver, with a participating-bank hold up to $50.000m [P10M-026] of combined commitments. All material conditions, covenants, monitoring requirements, and fallback protections remain mandatory. The borrower is Quanex Building Products Corporation; the project-specific qualitative risk assessment is **Elevated** [P10M-119], not a bank grade, agency rating, calibrated probability of default, or official borrower classification.
+**Conditional Approval — proceed with diligence and definitive documentation.** Approve the selected $635.000m [P10M-017] fully funded term facility and $300.000m [P10M-018] revolver for continued diligence and definitive documentation, with a participating-bank hold up to $50.000m [P10M-026] of combined commitments. **No final commitment or funding authorization exists until all material conditions are satisfied.** All material conditions, covenants, monitoring requirements, and fallback protections remain mandatory. The borrower is Quanex Building Products Corporation; the project-specific qualitative risk assessment is **Elevated** [P10M-119], not a bank grade, agency rating, calibrated probability of default, or official borrower classification.
 
-What we lend: the selected senior secured cash-flow structure described above, not the original $650m request. Why refinance: term out persistent acquisition-related revolver usage, preserve working-capital capacity, add amortization and intervention rights, and extend maturity from August 2029 to January 2031. How repaid: primary repayment is recurring operating cash available for debt service after operating requirements, cash interest, cash taxes, working-capital needs, necessary maintenance capital expenditure, and other required uses. Scheduled amortization and the ECF sweep are payment mechanisms applied to available cash, not repayment sources. What can go wrong: opening leverage of 3.2285x near the 3.25x warning, no same-horizon deleveraging benefit, an October 31, 2026 moderate covenant breach that mitigation does not cure, integration/margin/working-capital/control risk, severe liquidity exhaustion and payment failure, and a $324.780m bank-debt maturity gap at January 31, 2031. Why acceptable conditionally: base interim debt service and minimum liquidity hold, the moderate breach creates early intervention while liquidity and payment capacity remain available, the bank hold is capped, no waiver is assumed, and a failed material condition triggers the existing-facility fallback rather than more debt. [P10D-001:P10D-018]
+What we lend: the selected senior secured cash-flow structure described above, not the original $650m request. At January 31, 2026, selected projected closing debt of $727.517m is $5.000m below projected existing debt of $732.517m only because the conditional $15m non-debt source exceeds assumed $10m refinancing fees. If that source is unavailable, resize, obtain another acceptable non-debt source, or do not close—never replace it with debt. Why refinance: preserve working-capital capacity, add amortization, ECF sweep, reporting and intervention rights, and extend maturity from August 2029 to January 2031; the case is not supported by faster common-horizon deleveraging. How repaid: primary repayment is recurring operating cash available for debt service after operating requirements, cash interest, cash taxes, working-capital needs, necessary maintenance capital expenditure, and other required uses. Scheduled amortization and the ECF sweep are payment mechanisms applied to available cash, not repayment sources. What can go wrong: opening leverage of 3.2285x near the 3.25x warning, a $19.385m common-horizon debt disadvantage, an October 31, 2026 moderate covenant breach that mitigation does not cure, integration/margin/working-capital/control risk, severe liquidity exhaustion and payment failure, and a $324.780m bank-debt maturity gap at January 31, 2031. Why acceptable conditionally: base interim debt service and minimum liquidity hold, the moderate breach creates early intervention while liquidity and payment capacity remain available, the bank hold is capped, no waiver is assumed, and a failed material condition triggers the existing-facility fallback rather than more debt. [P10D-001:P10D-018]
 
 The proposed refinancing is not justified by faster same-horizon debt reduction. It is supportable only for its maturity extension, liquidity structure, amortization, lender protections, and monitoring package, subject to acceptable final economics and documentation.
 
@@ -52,9 +54,9 @@ At the common July 31, 2029 horizon, selected total funded debt is $514.754m [P1
 
 ## 7. Downside and covenant intervention
 
-Moderate unmitigated FY2026 annual EBITDA is $151.000m [P10M-046]; maximum leverage / minimum coverage over the forecast are 4.4893x [P10M-053] / 3.2104x [P10M-054]. Moderate mitigated maximum leverage / minimum coverage are 4.4670x [P10M-069] / 3.2168x [P10M-070]. Both paths warn and breach on October 31, 2026; mitigation does not restore leverage covenant compliance. Minimum all-in liquidity over the forecast remains positive at $165.078m [P10M-052] / $168.937m [P10M-068], and neither modeled path reaches liquidity exhaustion or payment failure. No automatic waiver is assumed. January 31, 2031 bank-debt gaps are $408.375m [P10M-056] / $381.133m [P10M-072]. [P10M moderate paths]
+Moderate unmitigated FY2026 annual EBITDA is $151.000m [P10M-046]; maximum quarterly-test leverage / minimum coverage over the forecast are 4.4893x [P10M-053] / 3.2104x [P10M-054]. Moderate mitigated maximum quarterly-test leverage / minimum coverage are 4.4670x [P10M-069] / 3.2168x [P10M-070]. Both paths warn and breach on October 31, 2026; mitigation does not restore leverage covenant compliance. Minimum all-in liquidity over the forecast remains positive at $165.078m [P10M-052] / $168.937m [P10M-068], and neither modeled path reaches liquidity exhaustion or payment failure. No automatic waiver is assumed. January 31, 2031 bank-debt gaps are $408.375m [P10M-056] / $381.133m [P10M-072]. [P10M moderate paths]
 
-Severe unmitigated reaches warning in April 2026, breach in October 2026, zero usable liquidity in July 2027, and mandatory cash-interest failure on December 31, 2027. Maximum leverage / minimum coverage are 7.0574x [P10M-085] / 1.7819x [P10M-086]; the maturity gap is $604.258m [P10M-088]. Severe mitigation delays but does not eliminate failure and leaves $554.718m [P10M-104]. Lower debt caused by curtailed borrowing or unpaid obligations is not improvement. [P10M-066:P10M-074; P10CM-021:P10CM-023]
+Severe unmitigated reaches warning in April 2026, breach in October 2026, zero usable liquidity in July 2027, and mandatory cash-interest failure on December 31, 2027. Maximum quarterly-test leverage / minimum coverage are 7.0574x [P10M-085] / 1.7819x [P10M-086]; the maturity gap is $604.258m [P10M-088]. Severe mitigation delays but does not eliminate failure and leaves $554.718m [P10M-104]. Lower debt caused by curtailed borrowing or unpaid obligations is not improvement. [P10M-066:P10M-074; P10CM-021:P10CM-023]
 
 ## 8. Recovery and risk assessment
 
@@ -66,11 +68,11 @@ Official facility recovery remains **N/D** [P10M-133]. Potential collateral real
 
 Closing conditions cover the verified $15m source; final payoff and funds flow; closing coverage; covenant and draw definitions; final economics; domestic guarantees; collateral, releases, perfection, and priority; foreign-cash treatment; LC mechanics; projections; legal/KYC/tax/authority; and full committed financing. Ongoing protections cover distributions, minimum liquidity, reporting, certificates, control remediation, and maturity planning. Analyst warnings remain distinct from covenant breaches. [P10CM-001:P10CM-026]
 
-At the July 31, 2029 common horizon, the selected structure leaves approximately $19.4 million more total funded debt than retaining the existing facilities. Quanex could therefore avoid refinancing fees and near-term debt expansion by retaining or amending its current financing. The lower selected maturity gap is achieved partly because the proposed facility remains outstanding approximately 18 months longer.
+The strongest counterargument is that refinancing incurs fees and unresolved economics; the selected structure leaves $19.385 million more total funded debt than existing facilities at the July 31, 2029 common horizon; moderate stress breaches in October 2026; refinancing dependency remains unresolved; and the lower selected January 31, 2031 ultimate gap benefits partly from approximately 18 additional months. Retaining or amending the existing facilities remains the mandatory fallback if a material closing condition fails.
 
 The response is not faster deleveraging or moderate covenant survival. If fully conditioned, the selected structure reallocates acquisition usage into term debt, preserves working-capital capacity, adds amortization, a sweep, earlier intervention and monitoring, extends maturity, caps the bank hold, and supplies a mandatory fallback. Without those protections, evidence, and acceptable economics, the counterargument wins and the modeled transaction should not close.
 
-**Conclusion:** **Conditional Approval**; owner-review status `owner_reviewed` for all 18 P10D decisions. This project recommendation does not authorize funding and does not represent actual bank approval or commitment.
+**Conclusion:** **Conditional Approval — proceed with diligence and definitive documentation.** Owner-review status `owner_reviewed` for all 18 P10D decisions. **No final commitment or funding authorization exists until all material conditions are satisfied.**
 
 ---
 
@@ -89,7 +91,7 @@ The response is not faster deleveraging or moderate covenant survival. If fully 
 
 ### Appendix B — scenario and maturity comparison
 
-| Case | Max leverage | Min coverage | Min liquidity | Unsupported maturity gap |
+| Case | Maximum quarterly-test leverage | Min coverage | Min liquidity | Unsupported maturity gap |
 |---|---:|---:|---:|---:|
 | Base | 3.2285x [P10M-037] | 5.3860x [P10M-038] | $263.902m [P10M-036] | $324.780m [P10M-040] |
 | Moderate unmitigated | 4.4893x [P10M-053] | 3.2104x [P10M-054] | $165.078m [P10M-052] | $408.375m [P10M-056] |

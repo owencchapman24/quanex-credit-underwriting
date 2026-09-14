@@ -1890,6 +1890,7 @@ def prior_analytical_artifact_changes() -> list[str]:
             cwd=ROOT, text=True, capture_output=True, check=True,
         ).stdout.splitlines()
         if path.startswith(("data/phase", "docs/phase-"))
+        and path != "docs/phase-7/COVENANT_DESIGN.md"
     ]
     result = subprocess.run(
         ["git", "diff", "--name-only", checkpoint, "--", *protected],
@@ -1932,6 +1933,7 @@ def validate_changed_paths() -> None:
         "scripts/phase10.py", "scripts/build-phase10.mjs", "scripts/render-phase10.py",
         "scripts/phase11.py", "scripts/render-phase11.py",
         "tests/test_phase6.py", "tests/test_phase7.py", "tests/test_phase8.py", "tests/test_phase9.py", "tests/test_phase10.py", "tests/test_phase11.py",
+        "tests/test_audit_remediation.py",
         "model/Quanex_Credit_Underwriting.xlsx",
     }
     unexpected = [
@@ -2235,7 +2237,7 @@ Phase 7 tests proposed distribution restrictions against Phase 6 cash paths but 
         "## Monitoring and intervention", "",
         "The analyst warning levels are 0.25x inside the leverage covenants, 3.50x coverage versus a 3.00x covenant, and $75m liquidity versus a $50m covenant. Warning boundaries are inclusive. A warning suspends share repurchases, starts monthly reporting and requires a 10-business-day action plan. A proposed breach suspends all restricted payments and invokes the no-new-draw convention unless lenders approve another outcome.", "",
         "## Selected-structure covenant summary", "",
-        "| Path | Closing warning | Closing covenant | Max leverage | Min coverage | Opening liquidity | Subsequent minimum (date) | All-in minimum (date) | First warning | First breach | First draw shutoff | Payment failure | Maturity gap |",
+        "| Path | Closing warning | Closing covenant | Maximum quarterly-test leverage | Min coverage | Opening liquidity | Subsequent minimum (date) | All-in minimum (date) | First warning | First breach | First draw shutoff | Payment failure | Maturity gap |",
         "|---|---|---|---:|---:|---:|---:|---:|---|---|---|---|---:|",
     ])
     for row in covenant_summary:

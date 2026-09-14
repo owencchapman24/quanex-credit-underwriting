@@ -2,30 +2,40 @@ consistency_id,category,test_name,status,observed,expected
 P10C-001,recommendation,memo status,PASS,True,True
 P10C-002,recommendation,memo conditional approval,PASS,True,True
 P10C-003,recommendation,memo fallback,PASS,True,True
-P10C-004,cutoff,memo cutoff,PASS,True,True
-P10C-005,recommendation,brief status,PASS,True,True
-P10C-006,recommendation,brief conditional approval,PASS,True,True
-P10C-007,recommendation,brief fallback,PASS,True,True
-P10C-008,cutoff,brief cutoff,PASS,True,True
-P10C-009,recommendation,README status,PASS,True,True
-P10C-010,recommendation,README conditional approval,PASS,True,True
-P10C-011,recommendation,README fallback,PASS,True,True
-P10C-012,cutoff,README cutoff,PASS,True,True
-P10C-013,numerical,"memo contains ('lender_base_ebitda', 'FY2025')",PASS,True,$225.344m
-P10C-014,numerical,"brief contains ('lender_base_ebitda', 'FY2025')",PASS,True,$225.344m
-P10C-015,numerical,"memo contains ('opening_funded_debt', 'selected')",PASS,True,$727.517m
-P10C-016,numerical,"brief contains ('opening_funded_debt', 'selected')",PASS,True,$727.517m
-P10C-017,numerical,"memo contains ('opening_gross_leverage', 'selected')",PASS,True,3.2285x
-P10C-018,numerical,"brief contains ('opening_gross_leverage', 'selected')",PASS,True,3.2285x
-P10C-019,numerical,"memo contains ('base_all_in_liquidity', 'selected')",PASS,True,$263.902m
-P10C-020,numerical,"brief contains ('base_all_in_liquidity', 'selected')",PASS,True,$263.902m
-P10C-021,numerical,"memo contains ('unsupported_maturity_gap', 'BASE')",PASS,True,$324.780m
-P10C-022,numerical,"brief contains ('unsupported_maturity_gap', 'BASE')",PASS,True,$324.780m
-P10C-023,numerical,"memo contains ('unsupported_maturity_gap', 'MODERATE_UNMITIGATED')",PASS,True,$408.375m
-P10C-024,numerical,"brief contains ('unsupported_maturity_gap', 'MODERATE_UNMITIGATED')",PASS,True,$408.375m
-P10C-025,numerical,"memo contains ('unsupported_maturity_gap', 'SEVERE_UNMITIGATED')",PASS,True,$604.258m
-P10C-026,numerical,"brief contains ('unsupported_maturity_gap', 'SEVERE_UNMITIGATED')",PASS,True,$604.258m
-P10C-027,workbook,recommendation banner,PASS,Phase 10 project recommendation - Conditional Approval | owner_reviewed | public-information hypothetical transaction,Conditional Approval
-P10C-028,workbook,recommendation status,PASS,Conditional Approval | owner_reviewed,owner_reviewed
-P10C-029,workbook,fallback,PASS,If unmet: no added debt/covenant loosening; retain or amend existing via limited amendment/extension,limited amendment/extension
-P10C-030,workbook,official recovery,PASS,Official recovery N/D; collateral/business-sale recovery is secondary backstop,N/D
+P10C-004,recommendation,memo no final authorization,PASS,True,True
+P10C-005,comparison,memo same-date closing,PASS,checked,same-date $5.000m advantage
+P10C-006,comparison,memo no near-term expansion claim,PASS,checked,absent
+P10C-007,cutoff,memo cutoff,PASS,True,True
+P10C-008,recommendation,brief status,PASS,True,True
+P10C-009,recommendation,brief conditional approval,PASS,True,True
+P10C-010,recommendation,brief fallback,PASS,True,True
+P10C-011,recommendation,brief no final authorization,PASS,True,True
+P10C-012,comparison,brief same-date closing,PASS,checked,same-date $5.000m advantage
+P10C-013,comparison,brief no near-term expansion claim,PASS,checked,absent
+P10C-014,cutoff,brief cutoff,PASS,True,True
+P10C-015,recommendation,README status,PASS,True,True
+P10C-016,recommendation,README conditional approval,PASS,True,True
+P10C-017,recommendation,README fallback,PASS,True,True
+P10C-018,recommendation,README no final authorization,PASS,True,True
+P10C-019,comparison,README same-date closing,PASS,checked,same-date $5.000m advantage
+P10C-020,comparison,README no near-term expansion claim,PASS,checked,absent
+P10C-021,cutoff,README cutoff,PASS,True,True
+P10C-022,numerical,"memo contains ('lender_base_ebitda', 'FY2025')",PASS,True,$225.344m
+P10C-023,numerical,"brief contains ('lender_base_ebitda', 'FY2025')",PASS,True,$225.344m
+P10C-024,numerical,"memo contains ('opening_funded_debt', 'selected')",PASS,True,$727.517m
+P10C-025,numerical,"brief contains ('opening_funded_debt', 'selected')",PASS,True,$727.517m
+P10C-026,numerical,"memo contains ('opening_gross_leverage', 'selected')",PASS,True,3.2285x
+P10C-027,numerical,"brief contains ('opening_gross_leverage', 'selected')",PASS,True,3.2285x
+P10C-028,numerical,"memo contains ('base_all_in_liquidity', 'selected')",PASS,True,$263.902m
+P10C-029,numerical,"brief contains ('base_all_in_liquidity', 'selected')",PASS,True,$263.902m
+P10C-030,numerical,"memo contains ('unsupported_maturity_gap', 'BASE')",PASS,True,$324.780m
+P10C-031,numerical,"brief contains ('unsupported_maturity_gap', 'BASE')",PASS,True,$324.780m
+P10C-032,numerical,"memo contains ('unsupported_maturity_gap', 'MODERATE_UNMITIGATED')",PASS,True,$408.375m
+P10C-033,numerical,"brief contains ('unsupported_maturity_gap', 'MODERATE_UNMITIGATED')",PASS,True,$408.375m
+P10C-034,numerical,"memo contains ('unsupported_maturity_gap', 'SEVERE_UNMITIGATED')",PASS,True,$604.258m
+P10C-035,numerical,"brief contains ('unsupported_maturity_gap', 'SEVERE_UNMITIGATED')",PASS,True,$604.258m
+P10C-036,workbook,recommendation banner,PASS,Conditional Approval — proceed with diligence and definitive documentation. | owner_reviewed | public-information hypothetical transaction,Conditional Approval — proceed with diligence and definitive documentation.
+P10C-037,workbook,no final authorization,PASS,No final commitment or funding authorization exists until all material conditions are satisfied.,No final commitment or funding authorization exists until all material conditions are satisfied.
+P10C-038,workbook,recommendation status,PASS,Conditional Approval — proceed with diligence and definitive documentation. | owner_reviewed,owner_reviewed
+P10C-039,workbook,fallback,PASS,If unmet: no added debt/covenant loosening; retain or amend existing via limited amendment/extension,limited amendment/extension
+P10C-040,workbook,official recovery,PASS,Official recovery N/D; collateral/business-sale recovery is secondary backstop,N/D

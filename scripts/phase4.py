@@ -1580,7 +1580,8 @@ def validate_changed_paths() -> None:
         "scripts/phase11.py", "scripts/render-phase11.py",
         "tests/test_phase4.py",
         "tests/test_phase5.py", "tests/test_phase6.py", "tests/test_phase7.py",
-        "tests/test_phase8.py", "tests/test_phase9.py", "tests/test_phase10.py", "tests/test_phase11.py", "model/Quanex_Credit_Underwriting.xlsx",
+        "tests/test_phase8.py", "tests/test_phase9.py", "tests/test_phase10.py", "tests/test_phase11.py",
+        "tests/test_audit_remediation.py", "model/Quanex_Credit_Underwriting.xlsx",
     }
     unexpected = [path for path in changed_paths()
                   if path not in allowed_exact and not path.startswith("data/phase4/")

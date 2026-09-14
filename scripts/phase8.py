@@ -20,6 +20,7 @@ import sys
 import tempfile
 import zipfile
 from collections import defaultdict
+from dataclasses import replace
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -32,6 +33,7 @@ RAW = DATA / "raw"
 PROCESSED = DATA / "processed"
 DOCS = ROOT / "docs" / "phase-8"
 MODEL = ROOT / "model" / "Quanex_Credit_Underwriting.xlsx"
+DYNAMIC_EVIDENCE = PROCESSED / "DYNAMIC_TEST_EVIDENCE.csv"
 APPROVED_PHASE7_COMMIT = "58e1b83a644021b785162d851e1539dd65dff9f5"
 APPROVED_PHASE8_COMMIT = "b52141dadeb91362cac7cece9b31ec0f3e573534"
 NODE = Path.home() / ".cache" / "codex-runtimes" / "codex-primary-runtime" / "dependencies" / "node" / "bin" / "node.exe"
@@ -67,6 +69,8 @@ SOURCE_INPUTS = (
     "data/phase7/processed/COVENANT_SUMMARY.csv",
     "data/phase7/processed/COMMON_HORIZON_COMPARISON.csv",
     "data/phase7/processed/ULTIMATE_MATURITY_COMPARISON.csv",
+    "data/phase7/raw/STRUCTURE_CANDIDATES.csv",
+    "data/phase7/processed/SOURCES_AND_USES_RECONCILIATION.csv",
     "docs/phase-0/EVIDENCE_INVENTORY.csv",
     "docs/phase-7/SOURCE_LEDGER.csv",
 )
@@ -110,6 +114,10 @@ def fmt(value: Decimal | object) -> str:
     if "." in text:
         text = text.rstrip("0").rstrip(".")
     return text or "0"
+
+
+def sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def git_head() -> str:
@@ -243,12 +251,170 @@ def build_period_inputs() -> list[dict[str, object]]:
     return output
 
 
+def build_opening_debt_comparison() -> list[dict[str, object]]:
+    """Keep the October actual reference separate from January alternatives."""
+    phase7 = load_phase7()
+    candidates = {
+        row["candidate_id"]: row
+        for row in phase7.structure_candidate_rows(phase7.candidate_definitions())
+    }
+    actual_total = Decimal("703.869")
+    actual_other = Decimal("62.619")
+    rows: list[dict[str, object]] = [{
+        "comparison_id": "P8DC-001", "comparison_group": "historical_reference",
+        "alternative": "Existing actual", "comparison_date": "2025-10-31",
+        "bank_debt": fmt(actual_total - actual_other), "other_funded_debt": fmt(actual_other),
+        "total_funded_debt": fmt(actual_total), "classification": "reported_historical_reference",
+        "source_ids": "SRC-001;SRC-002", "status": "historical_reference_only",
+        "limitations": "Historical reference point; not compared directly with projected January 31, 2026 alternatives.",
+    }]
+    for sequence, candidate_id, label in (
+        (2, "STR-001", "Retain existing facilities"),
+        (3, "STR-008", "Selected $635m refinancing"),
+        (4, "STR-003", "$650m reference refinancing"),
+    ):
+        source = candidates[candidate_id]
+        rows.append({
+            "comparison_id": f"P8DC-{sequence:03d}", "comparison_group": "projected_closing_alternatives",
+            "alternative": label, "comparison_date": "2026-01-31",
+            "bank_debt": source["opening_bank_debt"],
+            "other_funded_debt": source["retained_other_funded_debt"],
+            "total_funded_debt": source["opening_gross_funded_debt"],
+            "classification": "phase7_projected_closing_calculation",
+            "source_ids": source["source_ids"], "status": "same_date_projected_alternative",
+            "limitations": source["limitations"],
+        })
+    write_csv(PROCESSED / "OPENING_DEBT_COMPARISON.csv", rows)
+    return rows
+
+
+def build_term_sizing_sensitivity() -> list[dict[str, object]]:
+    """Select existing Phase 7 pairings; never hold a closing source constant."""
+    phase7_rows = {
+        row["candidate_id"]: row
+        for row in read_csv(ROOT / "data" / "phase7" / "processed" / "SOURCES_AND_USES_RECONCILIATION.csv")
+    }
+    rows: list[dict[str, object]] = []
+    for candidate_id in ("STR-007", "STR-008", "STR-010", "STR-003"):
+        source = phase7_rows[candidate_id]
+        difference = dec(source["sources_less_uses"])
+        non_debt = dec(source["required_non_debt_contribution"])
+        if abs(difference) > TOLERANCE:
+            case_status = "unbalanced_diagnostic"
+        elif candidate_id == "STR-008":
+            case_status = "conditional_selected"
+        elif non_debt > 0:
+            case_status = "conditional"
+        else:
+            case_status = "feasible_reference"
+        rows.append({
+            "sensitivity_id": f"P8TS-{len(rows)+1:03d}", "candidate_id": candidate_id,
+            "candidate_name": source["candidate_name"],
+            "term_amount": source["initial_term_funding"], "opening_revolver": source["opening_revolver"],
+            "non_debt_source": source["required_non_debt_contribution"],
+            "total_sources": source["total_sources"], "total_uses": source["reference_closing_uses"],
+            "sources_less_uses": source["sources_less_uses"],
+            "projected_closing_funded_debt": source["opening_total_funded_debt"],
+            "opening_leverage": source["closing_gross_leverage"], "case_status": case_status,
+            "source_ids": source["source_ids"], "upstream_ids": source["reconciliation_id"],
+            "limitations": source["limitations"],
+        })
+    write_csv(PROCESSED / "TERM_SIZING_SENSITIVITY.csv", rows)
+    return rows
+
+
+def build_amortization_sensitivity() -> list[dict[str, object]]:
+    """Rerun the selected structure through the Phase 7 integrated debt engine."""
+    phase7 = load_phase7()
+    selected = next(item for item in phase7.candidate_definitions() if item.candidate_id == "STR-008")
+    rows: list[dict[str, object]] = []
+    for amortization in map(Decimal, ("5", "7.5", "10", "15")):
+        candidate = replace(
+            selected,
+            candidate_id=f"P8AS-{len(rows)+1:03d}",
+            name=f"$635m selected structure / {fmt(amortization)}% amortization",
+            amortization_percent=amortization,
+        )
+        monthly, summary = phase7.model_candidate(candidate, "BASE")
+        operating_rows = [row for row in monthly if row["maturity_event"] != "yes"]
+        if not operating_rows:
+            raise Phase8Error(f"Integrated amortization path is empty: {amortization}")
+        average_bank_debt = sum((
+            dec(row["opening_term_principal"]) + dec(row["opening_revolver"])
+            + dec(row["ending_term_principal"]) + dec(row["ending_revolver"])
+        ) / Decimal("2") for row in operating_rows) / Decimal(len(operating_rows))
+        liquidity = phase7.liquidity_presentation(candidate, monthly)
+        common = phase7.build_common_horizon_comparison(
+            (candidate,), {(candidate.candidate_id, "BASE"): monthly},
+        )[0]
+        maturity = phase7.build_ultimate_maturity_comparison(
+            (candidate,), {(candidate.candidate_id, "BASE"): monthly},
+        )[0]
+        covenant_tests, _ = phase7.build_covenant_tests({"BASE": monthly})
+        complete_tests = [row for row in covenant_tests if row["input_completeness_status"] == "complete"]
+        if not complete_tests:
+            raise Phase8Error(f"No complete covenant tests for amortization {amortization}")
+        leverage_tests = [
+            row for row in covenant_tests
+            if row["gross_funded_leverage"] not in {
+                "", phase7.N_D_VALUE, phase7.N_M, phase7.N_D,
+            }
+        ]
+        if not leverage_tests:
+            raise Phase8Error(f"No determinable leverage tests for amortization {amortization}")
+        first_warning = next((
+            row["period_end"] for row in covenant_tests
+            if row["overall_warning_status"] in {"warning", "breached"}
+        ), "")
+        first_breach = next((
+            row["period_end"] for row in covenant_tests
+            if row["overall_covenant_status"] == "breached"
+        ), "")
+        rows.append({
+            "sensitivity_id": candidate.candidate_id,
+            "annual_amortization_percent": fmt(amortization),
+            "cumulative_scheduled_principal": fmt(summary["scheduled_principal_paid"]),
+            "average_modeled_bank_debt": fmt(average_bank_debt),
+            "cumulative_cash_interest": fmt(summary["cumulative_cash_interest"]),
+            "peak_revolver": fmt(summary["peak_revolver_including_opening"]),
+            "minimum_operating_cash": fmt(min(dec(row["ending_cash"]) for row in operating_rows)),
+            "minimum_usable_liquidity": liquidity["all_in_minimum_usable_liquidity"],
+            "cumulative_ecf_sweep": fmt(summary["cash_sweep"]),
+            "ending_bank_debt": fmt(summary["ending_bank_debt"]),
+            "common_horizon_total_funded_debt": common["ending_total_funded_debt"],
+            "unsupported_maturity_gap": maturity["unsupported_maturity_gap"],
+            # Match the owner-reviewed Phase 7 covenant-summary convention: a
+            # determinable leverage test remains usable even where a separate
+            # coverage input leaves the combined test row incomplete.
+            "maximum_quarterly_test_leverage": fmt(max(dec(row["gross_funded_leverage"]) for row in leverage_tests)),
+            "minimum_complete_ltm_coverage": fmt(min(dec(row["interest_coverage"]) for row in complete_tests)),
+            "first_warning_date": first_warning or "none",
+            "first_breach_date": first_breach or "none",
+            "path_status": summary["status"],
+            "source_ids": "SRC-001;SRC-002;SRC-003",
+            "upstream_ids": f"STR-008;BASE;Phase7 integrated engine;{fmt(amortization)}%",
+            "limitations": "Base operating case and selected closing structure held constant. The Phase 7 cash, revolver, interest, sweep, liquidity, covenant, and maturity engine is rerun; no refinancing proceeds are assumed.",
+        })
+    write_csv(PROCESSED / "AMORTIZATION_SENSITIVITY_RESULTS.csv", rows)
+    return rows
+
+
+def build_model_support_inputs() -> dict[str, int]:
+    return {
+        "opening_debt_rows": len(build_opening_debt_comparison()),
+        "term_sizing_rows": len(build_term_sizing_sensitivity()),
+        "amortization_rows": len(build_amortization_sensitivity()),
+    }
+
+
 def build_starting_checkpoint() -> None:
     write_csv(RAW / "STARTING_CHECKPOINT.csv", [{
         "repository": "owencchapman24/quanex-credit-underwriting",
         "branch": "main", "approved_phase7_commit": APPROVED_PHASE7_COMMIT,
         "approved_phase8_commit": APPROVED_PHASE8_COMMIT,
-        "local_head": git_head(), "source_input_signature": source_signature(),
+        # Record the approved Phase 8 lineage boundary rather than the later
+        # release/temporary-overlay commit that invoked deterministic rebuild.
+        "local_head": APPROVED_PHASE8_COMMIT, "source_input_signature": source_signature(),
         "information_cutoff": "2025-12-15", "hypothetical_closing": "2026-01-31",
         "calculation_engine": "LibreOffice 26.8.0.3",
     }])
@@ -387,7 +553,51 @@ def workbook_structure() -> dict[str, object]:
     }
 
 
-def validate_workbook(engine_report: dict[str, object] | None = None) -> list[dict[str, object]]:
+def dynamic_evidence_state() -> tuple[str, str]:
+    if not DYNAMIC_EVIDENCE.is_file():
+        return "NOT_RUN", "dynamic evidence file absent"
+    rows = read_csv(DYNAMIC_EVIDENCE)
+    if not rows:
+        return "NOT_RUN", "dynamic evidence file empty"
+    current_script = sha256(ROOT / "scripts" / "recalculate-phase8.py")
+    current_builder = sha256(ROOT / "scripts" / "build-phase8.mjs")
+    if any(row.get("dynamic_script_sha256") != current_script or row.get("workbook_builder_sha256") != current_builder for row in rows):
+        return "N/D", "dynamic evidence does not match current workbook logic"
+    if any(row.get("source_input_signature") != source_signature() for row in rows):
+        return "N/D", "dynamic evidence does not match current source inputs"
+    if any(row.get("status") == "FAIL" for row in rows):
+        return "FAIL", "one or more dynamic tests failed"
+    if not all(row.get("status") == "PASS" for row in rows):
+        return "N/D", "dynamic evidence is incomplete"
+    return "PASS", f"{len(rows)} separately recorded dynamic tests"
+
+
+def write_dynamic_evidence(report: dict[str, object]) -> list[dict[str, object]]:
+    tests = report.get("tests", [])
+    if report.get("dynamic_status") != "PASS" or not isinstance(tests, list) or not tests:
+        DYNAMIC_EVIDENCE.unlink(missing_ok=True)
+        return []
+    rows = [{
+        "evidence_id": f"P8DE-{index:03d}",
+        "test_name": str(item.get("test", "")),
+        "status": str(item.get("status", "N/D")),
+        "observed": json.dumps(item.get("observed"), sort_keys=True, separators=(",", ":")),
+        "engine": str(report.get("engine", "")),
+        "final_scenario": str(report.get("final_scenario", "")),
+        "dynamic_script_sha256": sha256(ROOT / "scripts" / "recalculate-phase8.py"),
+        "workbook_builder_sha256": sha256(ROOT / "scripts" / "build-phase8.mjs"),
+        "source_input_signature": source_signature(),
+        "tested_artifact": "disposable copy of model/Quanex_Credit_Underwriting.xlsx",
+    } for index, item in enumerate(tests, 1)]
+    write_csv(DYNAMIC_EVIDENCE, rows)
+    return rows
+
+
+def validate_workbook(
+    engine_report: dict[str, object] | None = None,
+    *,
+    require_dynamic: bool = True,
+) -> list[dict[str, object]]:
     required = [
         "Credit Summary", "Assumptions", "Scenario Comparison", "Historicals", "Credit Adjustments",
         "Transaction", "Forecast", "Debt Schedule", "Liquidity", "Covenants", "Recovery",
@@ -395,7 +605,12 @@ def validate_workbook(engine_report: dict[str, object] | None = None) -> list[di
     ]
     structure = workbook_structure()
     if engine_report is None:
-        engine_report = run_libreoffice("inspect")
+        # LibreOffice persists calculation caches and ZIP metadata during an
+        # inspect pass. Validation therefore opens only a disposable copy.
+        with tempfile.TemporaryDirectory(prefix="quanex-phase8-validate-") as temp_name:
+            workbook_copy = Path(temp_name) / MODEL.name
+            shutil.copy2(MODEL, workbook_copy)
+            engine_report = run_libreoffice("inspect", workbook_copy)
     controls: list[dict[str, object]] = []
 
     def add(name: str, passed: bool, observed: object, expected: object, category: str = "workbook") -> None:
@@ -407,8 +622,8 @@ def validate_workbook(engine_report: dict[str, object] | None = None) -> list[di
     add("required sheet order", structure["sheets"] == required, " | ".join(structure["sheets"]), " | ".join(required))
     add("sheet14 maps to Checks", structure["sheet_paths"].get("Checks") == "xl/worksheets/sheet14.xml", structure["sheet_paths"].get("Checks"), "xl/worksheets/sheet14.xml")
     phase9_present = (ROOT / "data" / "phase9").exists()
-    formula_ok = int(structure["formula_count"]) >= 2771 if phase9_present else int(structure["formula_count"]) == 2771
-    add("native cell formula count", formula_ok, structure["formula_count"], ">=2771 with Phase 9" if phase9_present else 2771)
+    formula_ok = int(structure["formula_count"]) >= 2742 if phase9_present else int(structure["formula_count"]) == 2742
+    add("native cell formula count", formula_ok, structure["formula_count"], ">=2742 with Phase 9" if phase9_present else 2742)
     add("Excel-compatible formula serialization", not structure["excel_formula_compatibility_issues"], len(structure["excel_formula_compatibility_issues"]), 0)
     add("no external workbook links", not structure["external_links"], len(structure["external_links"]), 0)
     add("Checks is terminal", not structure["checks_dependencies"], len(structure["checks_dependencies"]), 0)
@@ -417,7 +632,12 @@ def validate_workbook(engine_report: dict[str, object] | None = None) -> list[di
     add("calculation mode", structure["calculation_mode"] in {"auto", "automatic", ""}, structure["calculation_mode"], "auto")
     add("engine recalculation", engine_report.get("engine") == "LibreOffice 26.8.0.3", engine_report.get("engine"), "LibreOffice 26.8.0.3", "engine")
     add("final scenario", engine_report.get("final_scenario") == "Base", engine_report.get("final_scenario"), "Base", "scenario")
-    add("dynamic tests", engine_report.get("dynamic_status") in {None, "PASS"}, engine_report.get("dynamic_status", "not_run"), "PASS or separately run", "dynamic")
+    dynamic_status, dynamic_observed = dynamic_evidence_state()
+    controls.append({
+        "validation_id": f"P8V-{len(controls)+1:03d}", "category": "dynamic",
+        "test_name": "dynamic tests", "status": dynamic_status,
+        "observed": dynamic_observed, "expected": "PASS with separately identifiable evidence",
+    })
     workbook_checks = engine_report.get("checks", [])
     failed_checks = [row for row in workbook_checks if row.get("status") != "PASS"] if isinstance(workbook_checks, list) else []
     add("terminal workbook checks", isinstance(workbook_checks, list) and len(workbook_checks) == 32 and not failed_checks, len(failed_checks), 0, "checks")
@@ -458,7 +678,10 @@ def validate_workbook(engine_report: dict[str, object] | None = None) -> list[di
     add("closing coverage remains N/D", parity.get("closing_coverage") == "N/D", parity.get("closing_coverage"), "N/D", "parity")
     write_csv(PROCESSED / "FORMULA_PARITY_RESULTS.csv", parity_rows)
     write_csv(PROCESSED / "WORKBOOK_VALIDATION_RESULTS.csv", controls)
-    failed = [row for row in controls if row["status"] != "PASS"]
+    failed = [
+        row for row in controls
+        if row["status"] == "FAIL" or (require_dynamic and row["status"] != "PASS")
+    ]
     if failed:
         raise Phase8Error("Workbook validation failed: " + ", ".join(str(row["test_name"]) for row in failed))
     return controls
@@ -471,13 +694,13 @@ def write_workbook_map() -> None:
         ("Scenario Comparison", "live case and captured comparisons", "C2:AE21", "formulas plus engine-captured values and stale flags"),
         ("Historicals", "FY2021-FY2025 actuals", "C2:T58", "imported reported/calculated values with source IDs"),
         ("Credit Adjustments", "earnings layers and 11 decisions", "C2:AB33", "imported decisions and formula bridges"),
-        ("Transaction", "sources, uses and alternatives", "C2:P34", "native formulas"),
+        ("Transaction", "sources, uses and same-date alternatives", "C2:P44", "historical October reference separated from projected January alternatives; native formulas"),
         ("Forecast", "quarterly operating and cash forecast", "C2:W29", "native selected-scenario formulas"),
         ("Debt Schedule", "24 monthly plus 12 quarterly periods", "C2:AD48", "native roll-forward and sensitivity formulas"),
         ("Liquidity", "cash, availability and failure states", "C2:AI48", "native formulas linked to debt schedule"),
         ("Covenants", "quarterly covenant calculations", "C2:AR29", "native formulas and exact status logic"),
         ("Recovery", "Phase 9 pending state", "C2:F15", "no recovery calculations"),
-        ("Sensitivities", "term, EBITDA, rate, WC and maturity", "C2:N22", "explicit native formulas"),
+        ("Sensitivities", "balanced term pairings plus integrated amortization", "C2:Q30", "approved Phase 7 pairings and independently generated integrated paths"),
         ("Sources", "source and assumption register", "A1:M80", "approved imported lineage"),
         ("Checks", "terminal audit controls", "C2:H38", "independent formulas; no outbound dependencies"),
     ]
@@ -501,13 +724,15 @@ Reported history and approved prior-phase calculated values are imported with so
 
 ## Scenario captures and engine
 
-The workbook is authored with the bundled `@oai/artifact-tool` runtime and reproducibly recalculated by LibreOffice 26.8.0.3. Microsoft Excel for Microsoft 365 provides a separate compatibility gate. The capture workflow selects each of nine approved cases, fully recalculates, stores headline values and signatures, restores Base, recalculates and saves. Captures are snapshots, not parallel live forecasts. A formula-driven stale flag compares each captured signature with the current input signature.
+The workbook is authored with the bundled `@oai/artifact-tool` runtime and reproducibly recalculated by LibreOffice 26.8.0.3. Microsoft Excel for Microsoft 365 provides a separate compatibility gate. The capture workflow selects each of nine approved cases, fully recalculates, stores headline values and signatures, restores Base, recalculates and saves. Captures are snapshots, not parallel live forecasts. A formula-driven stale flag compares each captured signature with the current input signature. Dynamic interaction evidence is stored separately and can pass only when the disposable-copy test actually ran, matched the current scripts and source signature, and every recorded test passed.
+
+The Transaction sheet separates the October 31, 2025 historical debt reference from January 31, 2026 projected alternatives. Term sizing uses approved Phase 7 source pairings and reports sources less uses explicitly. Amortization sensitivity reruns the selected structure through the Phase 7 cash, revolver, interest, sweep, liquidity, covenant, and maturity engine; it is not a shortcut maturity-gap adjustment. Incomplete LTM periods display `N/D`; `N/M` is reserved for complete periods with nonpositive EBITDA or another nonpositive required denominator.
 
 ## Post-commit Excel compatibility correction
 
 The first desktop-Excel opening of commit `b52141dadeb91362cac7cece9b31ec0f3e573534` reported a removed formula record in `sheet14.xml`. Package mapping identifies that part as `Checks`; the exact incompatible record was `Checks!G20`, whose `COUNTIF` used an inline array constant as the range argument. LibreOffice evaluated that permissive extension, but Excel requires `COUNTIF`'s first argument to be a range. The builder now expresses the same nine-value membership test with ordinary `OR` comparisons. No business calculation depends on `Checks`.
 
-Microsoft Excel for Microsoft 365 version 16.0 build 20326 opened the corrected workbook normally, performed a full calculation rebuild, changed the selector to Moderate unmitigated, restored Base, saved a disposable copy, and reopened that copy without repair. All 2,771 cell formulas and all 66 Checks formulas survived, and no recovery log was generated.
+Microsoft Excel for Microsoft 365 version 16.0 build 20326 opened the corrected workbook normally, performed a full calculation rebuild, changed the selector to Moderate unmitigated, restored Base, saved a disposable copy, and reopened that copy without repair. Formula and Checks counts are re-established after each bounded generator revision, and no recovery log may be generated.
 
 Missing closing cash interest and unresolved legal or diligence items remain `N/D`, `Pending information`, or `Condition precedent`. Zero and nonpositive denominators display `N/M`. The separate book-cash diagnostic is not covenant or lender net leverage. The Recovery sheet remains pending Phase 9. No post-cutoff evidence is added.
 """, encoding="utf-8")
@@ -525,9 +750,9 @@ The workbook is not a lender commitment, official compliance certificate, final 
 
 The Phase 8 workflow builds the workbook with the bundled artifact runtime, recalculates every approved scenario in LibreOffice 26.8.0.3, captures comparisons, restores Base, saves, and then validates structure and cached results. USD-million and ratio parity use a 0.002 tolerance.
 
-Controls cover the exact 14-sheet order, native formulas and charts, terminal `Checks`, external links, cached formula errors, calculation mode, 32 workbook checks, Base restoration, 15 Python-to-workbook numeric points, and closing coverage remaining `N/D`. The disposable dynamic copy tests scenario changes, fixed historicals, term size, contribution, amortization, rate and spread, EBITDA, DSO, exact covenant boundaries, missing/zero/negative denominators, revolver exhaustion, draw shutoff, cash-floor and sweep safeguards, stale capture status, and full Base restoration.
+Controls cover the exact 14-sheet order, native formulas and charts, terminal `Checks`, external links, cached formula errors, calculation mode, workbook checks, Base restoration, Python-to-workbook numeric points, same-date alternative comparisons, balanced Phase 7 sizing pairings, and closing coverage remaining `N/D`. The disposable dynamic copy tests scenario changes, fixed historicals, term size, contribution, amortization, rate and spread, EBITDA, DSO, exact covenant boundaries, incomplete LTM periods, complete zero/negative denominators, missing interest, revolver exhaustion, draw shutoff, cash-floor and sweep safeguards, stale capture status, and full Base restoration. An unrun or unsupported dynamic gate remains `NOT_RUN` or `N/D`; it cannot pass.
 
-The post-commit Excel compatibility control maps `sheet14.xml` to `Checks`, rejects OOXML formula text with a leading equals sign, rejects inline array constants passed to range-only criteria functions, and retains all 66 Checks formulas after export and LibreOffice recalculation. The original validation reported 2,838 formulas by counting every worksheet XML tag beginning with `<f`; that total included 67 non-cell `formula`, `formula1`, or `formula2` nodes used by formatting or validation. The corrected exact count is 2,771 cell formula nodes before and after the compatibility fix. The original normalized fingerprint was `12589f4c34975118fad1aea3ddb83de8f67b4521f33307104ef1bd42efb07dd7`; the corrected fingerprint is `7dae55edc1d7fbb7ae15c04ff8173a5e610e75c31f4a6c75ad2c72e4eb078635`. The fingerprint changed because the intended Checks formula text and its source generator changed.
+The post-commit Excel compatibility control maps `sheet14.xml` to `Checks`, rejects OOXML formula text with a leading equals sign, and rejects inline array constants passed to range-only criteria functions. The bounded audit-remediation workbook contains 2,742 Phase 8 cell formulas before later-phase overlays. Its normalized Phase 8 fingerprint is `3f66a86542015ee20dc9812b99f00cfbcc84b8a56e78173247e5a5a77a7922dd`; the change from the earlier compatibility fingerprint reflects the intended same-date transaction, integrated sensitivity, LTM completeness, and validation-evidence revisions.
 
 Microsoft Excel for Microsoft 365 version 16.0 build 20326 opened the corrected workbook without repair, ran a full calculation rebuild, updated a non-Base scenario, restored Base, saved, closed, and reopened a disposable copy. Formula counts and the Base output remained intact, and no recovery log was generated. Run `powershell -ExecutionPolicy Bypass -NoProfile -File scripts/validate-phase8-excel.ps1` for this separate Excel gate.
 
@@ -589,8 +814,10 @@ def build() -> dict[str, object]:
         raise Phase8Error(f"HEAD is not the approved Phase 7/8 checkpoint or a descendant: {head}")
     if run(["git", "branch", "--show-current"]).stdout.strip() != "main":
         raise Phase8Error("Phase 8 must run on main")
+    DYNAMIC_EVIDENCE.unlink(missing_ok=True)
     build_starting_checkpoint()
     period_rows = build_period_inputs()
+    support = build_model_support_inputs()
     write_workbook_map()
     write_docs()
     update_readme()
@@ -598,11 +825,12 @@ def build() -> dict[str, object]:
     capture = run_libreoffice("capture")
     write_capture_results(capture)
     inspect = run_libreoffice("inspect")
-    controls = validate_workbook(inspect)
+    controls = validate_workbook(inspect, require_dynamic=False)
     return {
         "period_input_rows": len(period_rows), "scenarios": len(SCENARIOS),
         "workbook_size": MODEL.stat().st_size, "validation_controls": len(controls),
         "formula_count": workbook_structure()["formula_count"],
+        **support,
     }
 
 
@@ -623,7 +851,9 @@ def dynamic() -> dict[str, object]:
         shutil.copy2(MODEL, copy)
         report = run_libreoffice("dynamic", copy)
     if report.get("dynamic_status") != "PASS":
+        DYNAMIC_EVIDENCE.unlink(missing_ok=True)
         raise Phase8Error("Dynamic workbook tests failed")
+    write_dynamic_evidence(report)
     return report
 
 
@@ -661,9 +891,11 @@ def normalized_fingerprint() -> str:
 def all_workflow() -> None:
     summary = build()
     dynamic_report = dynamic()
+    final_controls = validate_workbook()
     with tempfile.TemporaryDirectory(prefix="quanex-phase8-previews-") as temp_name:
         previews = visual(Path(temp_name))
     summary["dynamic_tests"] = dynamic_report.get("test_count")
+    summary["final_validation_controls"] = len(final_controls)
     summary["preview_count"] = previews["preview_count"]
     summary["normalized_fingerprint"] = normalized_fingerprint()
     print("Phase 8 complete: " + json.dumps(summary, sort_keys=True))

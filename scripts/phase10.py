@@ -35,7 +35,8 @@ INFORMATION_CUTOFF = "2025-12-15"
 HYPOTHETICAL_CLOSING = "2026-01-31"
 RECOMMENDATION_STATUS = "owner_reviewed"
 RECOMMENDATION = "conditional_approval"
-RECOMMENDATION_DISPLAY = "Conditional Approval"
+RECOMMENDATION_DISPLAY = "Conditional Approval — proceed with diligence and definitive documentation."
+NO_FINAL_AUTHORIZATION = "No final commitment or funding authorization exists until all material conditions are satisfied."
 NODE = Path.home() / ".cache" / "codex-runtimes" / "codex-primary-runtime" / "dependencies" / "node" / "bin" / "node.exe"
 NODE_MODULES = Path.home() / ".cache" / "codex-runtimes" / "codex-primary-runtime" / "dependencies" / "node" / "node_modules"
 BUNDLED_PYTHON = Path.home() / ".cache" / "codex-runtimes" / "codex-primary-runtime" / "dependencies" / "python" / "python.exe"
@@ -60,10 +61,34 @@ SOURCE_INPUTS = (
     "data/phase7/processed/ULTIMATE_MATURITY_COMPARISON.csv",
     "data/phase7/processed/SOURCES_AND_USES_RECONCILIATION.csv",
     "data/phase8/processed/SCENARIO_CAPTURE_RESULTS.csv",
+    "data/phase8/processed/OPENING_DEBT_COMPARISON.csv",
+    "data/phase8/processed/TERM_SIZING_SENSITIVITY.csv",
+    "data/phase8/processed/AMORTIZATION_SENSITIVITY_RESULTS.csv",
     "data/phase9/processed/BORROWER_RISK_ASSESSMENT.csv",
     "data/phase9/processed/RECOVERY_CASE_REGISTER.csv",
     "data/phase9/processed/MONITORING_SCHEDULE.csv",
 )
+
+# These exact prior-phase paths are part of the approved independent-audit
+# remediation. Excluding only them from the clean-clone baseline overlay lets
+# the later working-tree overlay carry the reviewed delta without weakening the
+# guard for any unrelated prior-phase analytical change.
+AUDIT_REMEDIATION_PRIOR_PHASE_EXCEPTIONS = frozenset({
+    "data/phase8/processed/AMORTIZATION_SENSITIVITY_RESULTS.csv",
+    "data/phase8/processed/OPENING_DEBT_COMPARISON.csv",
+    "data/phase8/processed/SCENARIO_CAPTURE_RESULTS.csv",
+    "data/phase8/processed/TERM_SIZING_SENSITIVITY.csv",
+    "data/phase8/processed/WORKBOOK_MAP.csv",
+    "data/phase8/processed/WORKBOOK_VALIDATION_RESULTS.csv",
+    "data/phase8/raw/STARTING_CHECKPOINT.csv",
+    "data/phase9/processed/VALIDATION_RESULTS.csv",
+    "data/phase9/raw/STARTING_CHECKPOINT.csv",
+    "docs/phase-7/COVENANT_DESIGN.md",
+    "docs/phase-8/CALCULATION_VALIDATION.md",
+    "docs/phase-8/METHODOLOGY.md",
+    "docs/phase-8/SOURCE_LEDGER.csv",
+    "docs/phase-9/METHODOLOGY.md",
+})
 
 
 class Phase10Error(RuntimeError):
@@ -188,6 +213,23 @@ def excel_validation_on_copy(script_name: str, source: Path = MODEL) -> str:
     return output
 
 
+def isolation_baseline_paths(prior_artifact_paths: list[str]) -> list[str]:
+    """Return clean-clone baseline overlays, retaining unknown paths for rejection."""
+    return sorted(
+        (set(prior_artifact_paths) | set(SOURCE_INPUTS))
+        - AUDIT_REMEDIATION_PRIOR_PHASE_EXCEPTIONS
+    )
+
+
+def require_clean_isolated_baseline(staged_baseline: str) -> None:
+    """Reject every staged baseline difference that was not explicitly excepted."""
+    if staged_baseline:
+        raise Phase10Error(
+            "Isolated source baseline differs analytically: "
+            + staged_baseline.replace("\n", ", ")
+        )
+
+
 def isolated_workspace() -> tuple[tempfile.TemporaryDirectory[str], Path]:
     """Clone committed history, then overlay the exact current commit-relevant files."""
     holder = tempfile.TemporaryDirectory(prefix="quanex-phase10-verify-")
@@ -209,7 +251,7 @@ def isolated_workspace() -> tuple[tempfile.TemporaryDirectory[str], Path]:
         capture_output=True,
         check=True,
     ).stdout.splitlines()
-    exact_baseline_paths = sorted(set(prior_artifact_paths) | set(SOURCE_INPUTS))
+    exact_baseline_paths = isolation_baseline_paths(prior_artifact_paths)
     for relative in exact_baseline_paths:
         source = ROOT / relative
         target = destination / relative
@@ -220,8 +262,7 @@ def isolated_workspace() -> tuple[tempfile.TemporaryDirectory[str], Path]:
         ["git", "diff", "--cached", "--name-only", "--", *exact_baseline_paths],
         cwd=destination,
     )
-    if staged_baseline:
-        raise Phase10Error("Isolated source baseline differs analytically: " + staged_baseline.replace("\n", ", "))
+    require_clean_isolated_baseline(staged_baseline)
     # The clone supplies the committed baseline using its own checkout/EOL
     # configuration. Overlay only the actual working-tree delta; copying every
     # tracked file can create false changes from platform line-ending filters.
@@ -285,24 +326,24 @@ def display(value: object, units: str) -> str:
 
 def owner_review_decisions() -> list[dict[str, str]]:
     entries = [
-        ("P10D-001", "recommendation", "Conditional Approval of the selected structure, subject to every material condition.", "Owner approved the project recommendation; conditions remain open."),
+        ("P10D-001", "recommendation", f"{RECOMMENDATION_DISPLAY} {NO_FINAL_AUTHORIZATION}", "Owner approved the clarified display wording; conditions remain open."),
         ("P10D-002", "recommended facilities", "$635m fully funded term facility and $300m revolver, including a $29.898m opening draw; do not substitute incremental debt for the conditional $15m source.", "Owner approved the hypothetical facility sizes."),
         ("P10D-003", "bank hold", "Up to $50m of combined commitments.", "Owner approved the exposure cap."),
-        ("P10D-004", "transaction rationale", "No faster same-horizon deleveraging; support rests only on maturity extension, liquidity structure, amortization, lender protections, and monitoring, subject to final economics and documents.", "Owner approved the corrected rationale."),
+        ("P10D-004", "transaction rationale", "At January 31, 2026, selected projected closing debt is $5.000m below same-date existing debt only because the conditional $15m non-debt source exceeds assumed $10m fees. Primary benefits are liquidity structure, maturity extension, amortization, ECF sweep, reporting, and earlier intervention—not faster common-horizon deleveraging.", "Owner approved the date-consistent rationale."),
         ("P10D-005", "fallback alternative", "If any material condition fails, do not close as modeled and do not add debt; retain or amend the existing facilities through a limited amendment or extension.", "Owner approved the mandatory fallback."),
         ("P10D-006", "decisive strengths", "FY2025 cash conversion, full-year post-Tyman earnings capacity, base interim debt service, opening liquidity, amortization/sweep, capped hold, and explicit fallback.", "Owner approved the strengths."),
-        ("P10D-007", "decisive risks", "Thin opening leverage cushion, no same-horizon debt benefit, early moderate breach, severe liquidity/payment failure, integration/control risk, $324.780m maturity gap, unresolved refinancing, and N/D recovery.", "Owner approved the risks."),
+        ("P10D-007", "decisive risks", "Thin opening leverage cushion, $19.385m higher selected debt at the July 2029 common horizon, October 2026 moderate breach, severe liquidity/payment failure, integration/control risk, $324.780m maturity gap, unresolved refinancing, and N/D recovery.", "Owner approved the risks."),
         ("P10D-008", "conditions precedent", "Require the full closing, legal, financial, funding, and diligence package in P10CM-001 through P10CM-013.", "Owner approved the CP package; satisfaction remains open."),
         ("P10D-009", "distribution restrictions", "No debt-funded buybacks; distributions conditioned on no default, leverage, liquidity, draw usage, and pro forma compliance.", "Owner approved the restriction framework."),
         ("P10D-010", "monitoring and escalation", "Use monthly liquidity/integration reporting, quarterly certificates, early covenant intervention, and maturity escalation.", "Owner approved the monitoring framework."),
         ("P10D-011", "risk-grade wording", "Elevated is a project-specific qualitative risk assessment, not a bank grade, agency rating, calibrated PD, or official classification.", "Owner approved the qualified assessment."),
         ("P10D-012", "recovery wording", "Official recovery remains N/D; collateral/business-sale recoveries are secondary backstops and the two illustrative methods remain separate alternatives.", "Owner approved the recovery boundary."),
         ("P10D-013", "residual refinancing dependency", "The $324.780m bank-debt gap at January 31, 2031 is an unresolved separately underwritten maturity dependency; no takeout proceeds are assumed.", "Owner approved the refinancing conclusion."),
-        ("P10D-014", "strongest counterargument", "At July 31, 2029 the selected structure has $19.386m more total funded debt than existing facilities; its lower later maturity gap partly reflects about 18 additional months.", "Owner approved the corrected counterargument."),
-        ("P10D-015", "final memo language", "Use the generated memo and brief as the owner-reviewed project recommendation, never as an actual bank approval, commitment, funding authorization, legal opinion, or official risk grade.", "Owner approved the final decision language."),
+        ("P10D-014", "strongest counterargument", "Refinancing incurs fees and unresolved economics; selected funded debt is $19.385m above existing at July 31, 2029; moderate stress breaches in October 2026; refinancing dependency remains; and the lower selected ultimate gap benefits partly from about 18 additional months.", "Owner approved the corrected counterargument."),
+        ("P10D-015", "final memo language", f"Use the generated memo and brief as the owner-reviewed project recommendation. {NO_FINAL_AUTHORIZATION} Never present it as an actual bank approval, commitment, legal opinion, or official risk grade.", "Owner approved the final decision language."),
         ("P10D-016", "repayment framing", "Primary repayment is recurring operating cash after all required uses. Amortization and the ECF sweep are payment mechanisms; revolver capacity is liquidity support; refinancing is an unresolved dependency; recovery is the secondary backstop.", "Owner approved the corrected repayment hierarchy."),
         ("P10D-017", "covenant package", "Retain Phase 7 leverage, coverage, liquidity, sweep, and warning framework. Moderate breach is accepted as early intervention, without covenant loosening or assumed waiver.", "Owner approved the public-information covenant proposal subject to final documents."),
-        ("P10D-018", "Credit Summary wording", "Display the owner-reviewed Conditional Approval, corrected repayment hierarchy, unfavorable common horizon, moderate breach, fallback, Elevated assessment, and N/D recovery.", "Owner approved the final workbook presentation."),
+        ("P10D-018", "Credit Summary wording", f"Display '{RECOMMENDATION_DISPLAY}' and '{NO_FINAL_AUTHORIZATION}' with the corrected same-date debt comparison, repayment hierarchy, unfavorable common horizon, moderate breach, fallback, Elevated assessment, and N/D recovery.", "Owner approved the final workbook presentation."),
     ]
     return [
         {
@@ -391,7 +432,7 @@ def committee_metrics() -> list[dict[str, str]]:
             ("scheduled_principal", "scheduled_principal", "USD_millions"),
             ("ecf_sweep_realized", "ecf_sweep", "USD_millions"),
             ("all_in_minimum_liquidity", "all_in_minimum_liquidity", "USD_millions"),
-            ("maximum_gross_leverage", "maximum_leverage", "turns"),
+            ("maximum_quarterly_test_leverage", "maximum_leverage", "turns"),
             ("minimum_cash_interest_coverage", "minimum_coverage", "turns"),
             ("common_horizon_ending_funded_debt", "common_horizon_ending_debt", "USD_millions"),
             ("unsupported_maturity_gap", "maturity_gap", "USD_millions"),
@@ -403,7 +444,7 @@ def committee_metrics() -> list[dict[str, str]]:
                 horizon, basis = "2026-02-01 through 2031-01-31", "cumulative_model_period"
             elif name in {"all_in_minimum_liquidity", "minimum_cash_interest_coverage"}:
                 horizon, basis = "2026-01-31 opening plus 2026-02-01 through 2031-01-31 forecast", "minimum_over_forecast"
-            elif name == "maximum_gross_leverage":
+            elif name == "maximum_quarterly_test_leverage":
                 horizon, basis = "2026-01-31 opening plus 2026-02-01 through 2031-01-31 forecast", "maximum_over_forecast"
             elif name == "common_horizon_ending_funded_debt":
                 horizon, basis = "2029-07-31", "point_in_time_total_funded_debt"
@@ -443,6 +484,35 @@ def committee_metrics() -> list[dict[str, str]]:
             add("recovery", f"{prefix}_recovery", row["case_name"], row["illustrative_facility_recovery_percent"], "percent", "illustrative_sensitivity_only", "data/phase9/processed/RECOVERY_CASE_REGISTER.csv", row["case_id"], "owner_reviewed_upstream", row["limitations"])
     add("recovery", "illustrative_facility_claim", "2027-12-31", recovery[0]["facility_claim"], "USD_millions", "approved_prior_phase_model_output", "data/phase9/processed/RECOVERY_CASE_REGISTER.csv", recovery[0]["case_id"], "owner_reviewed_upstream", "Includes modeled term, revolver, and unpaid cash interest at the severe first-payment-failure date.")
     add("recovery", "official_facility_recovery", "public_information", N_D, "status", "not_determinable", "data/phase9/processed/FACILITY_RECOVERY_ASSESSMENT.csv", "P9FRA-001", "owner_reviewed_upstream", "Missing guarantor, collateral, priority, access, appraisal, and claims evidence.")
+
+    opening_debt = read_csv(ROOT / "data" / "phase8" / "processed" / "OPENING_DEBT_COMPARISON.csv")
+    opening_index = {row["alternative"]: row for row in opening_debt}
+    for alternative, scenario in (
+        ("Existing actual", "existing_actual"),
+        ("Retain existing facilities", "existing_projected"),
+        ("$650m reference refinancing", "reference_projected"),
+        ("Selected $635m refinancing", "selected_projected"),
+    ):
+        row = opening_index[alternative]
+        for metric_name, field in (
+            ("opening_bank_debt", "bank_debt"),
+            ("retained_other_funded_debt", "other_funded_debt"),
+            ("opening_total_funded_debt", "total_funded_debt"),
+        ):
+            add(
+                "opening_debt", metric_name, scenario, row[field], "USD_millions",
+                row["classification"], "data/phase8/processed/OPENING_DEBT_COMPARISON.csv",
+                row["source_ids"], "owner_reviewed_upstream", row["limitations"],
+                row["comparison_date"], "historical_actual_point_in_time" if scenario == "existing_actual" else "projected_closing_point_in_time",
+            )
+    add(
+        "opening_debt", "selected_minus_existing_projected_closing_debt", HYPOTHETICAL_CLOSING,
+        dec(opening_index["Selected $635m refinancing"]["total_funded_debt"]) - dec(opening_index["Retain existing facilities"]["total_funded_debt"]),
+        "USD_millions", "owner_reviewed_calculation", "data/phase8/processed/OPENING_DEBT_COMPARISON.csv",
+        f"{opening_index['Selected $635m refinancing']['comparison_id']};{opening_index['Retain existing facilities']['comparison_id']}",
+        "owner_reviewed", "Selected is lower only because the conditional $15m non-debt source exceeds assumed $10m refinancing fees; no debt substitution is permitted.",
+        HYPOTHETICAL_CLOSING, "same_date_projected_closing_difference",
+    )
     return rows
 
 
@@ -495,7 +565,7 @@ def risk_matrix() -> list[dict[str, str]]:
         ("risk", "Residual refinancing dependency", "Base unsupported bank-debt maturity gap is $324.780m at January 31, 2031.", "Operating cash does not self-liquidate the term; refinancing is not a demonstrated repayment source.", "Maturity plan begins at least 24 months early and escalates by 12 months.", "No takeout or refinancing proceeds are assumed; any refinancing is separately underwritten.", "P10M maturity;P10CM-026"),
         ("risk", "Information-quality weakness", "Cash-flow reporting-control material weakness remained open at FY2025 year-end.", "Reduces confidence in forecast cash classification and compliance reporting.", "Remediation milestones, testing evidence, and audit-committee reporting.", "No known misstatement is asserted.", "DRV-009;P10CM-020"),
         ("risk", "Legal, collateral, and recovery gaps", "Official facility recovery is N/D.", "Potential collateral realization, business-sale proceeds, and other default recoveries are secondary backstops only.", "Guarantees, collateral, perfection, priority, entity allocation, appraisal, claims, and realization-cost diligence.", "Full consolidated access is only a ceiling sensitivity; illustrative recovery is not official recovery.", "P10M recovery;P10CM-007:P10CM-009"),
-        ("alternative", "Retain or amend existing facilities", "At July 31, 2029, existing/selected total funded debt is $495.368m/$514.754m, so selected is $19.386m higher. Existing matures August 1, 2029 with a $432.749m bank-debt gap; amendment economics are N/D.", "Avoids refinancing fees and near-term debt expansion; selected offers no faster same-horizon deleveraging.", "Use as mandatory fallback if Phase 10 conditions fail.", "Selected's lower $324.780m gap at January 31, 2031 partly reflects about 18 additional months and is not directly comparable.", "P7CH-001;P7CH-008;P7UM-001;P7UM-008"),
+        ("alternative", "Retain or amend existing facilities", "At January 31, 2026, selected projected debt is $5.000m below projected existing debt only because the conditional $15m non-debt source exceeds assumed $10m fees. At July 31, 2029, existing/selected total funded debt is $495.368m/$514.754m, so selected is $19.385m higher. Existing matures August 1, 2029 with a $432.749m bank-debt gap; amendment economics are N/D.", "Avoids refinancing fees; selected offers no faster same-horizon deleveraging.", "Use as mandatory fallback if Phase 10 conditions fail.", "Moderate stress breaches in October 2026, refinancing remains unresolved, and selected's lower $324.780m gap at January 31, 2031 partly reflects about 18 additional months and is not directly comparable.", "P8DC-002;P8DC-003;P7CH-001;P7CH-008;P7UM-001;P7UM-008"),
     ]
     return [
         {
@@ -512,7 +582,7 @@ def conditions_and_monitoring() -> list[dict[str, str]]:
     items = [
         ("condition_precedent", "Verified $15m non-debt source", "Legal accessibility and funded cash in final funds flow; separate from $25m operating floor.", "No close; do not replace with incremental debt.", "P7OD-011;CP-012"),
         ("condition_precedent", "Final sources, uses, payoff and closing balances", "Executed payoff, January debt/cash/LC certificate, and zero unexplained uses gap.", "No close or resize with new approval.", "CP-001;CP-010;CP-016"),
-        ("condition_precedent", "No incremental-debt substitution", "Funding instruction and legal documents prohibit replacing a missing non-debt source with debt.", "Modeled transaction is not authorized.", "P10D-002;P10D-005"),
+        ("condition_precedent", "Conditional $15m non-debt source", "Verify the source and reflect it in binding funds flow. If unavailable, resize, obtain another acceptable non-debt source, or do not close; debt substitution is prohibited.", "Modeled transaction is not authorized and no final commitment or funding authorization exists.", "P10D-002;P10D-004;P10D-005"),
         ("condition_precedent", "Closing cash-interest coverage", "Satisfactory LTM cash-interest evidence under final definitions.", "No close or separately approved restructure.", "CP-008;CP-009"),
         ("condition_precedent", "Final covenant and draw definitions", "Debt, EBITDA, ECF, cures, cash netting, draw conditions, default, and waiver mechanics.", "No close until lender/counsel approval.", "P7CP-001:P7CP-017"),
         ("condition_precedent", "Pricing, recurring fees, hedges and amendment economics", "Executed fee letters, hedge treatment, break costs, OID and final economics.", "No economic recommendation or closing.", "CP-014;CP-015"),
@@ -568,6 +638,9 @@ def source_ledger() -> list[dict[str, str]]:
         "data/phase7/processed/ULTIMATE_MATURITY_COMPARISON.csv": "different-horizon maturity gaps",
         "data/phase7/processed/SOURCES_AND_USES_RECONCILIATION.csv": "closing funds-flow control",
         "data/phase8/processed/SCENARIO_CAPTURE_RESULTS.csv": "workbook-validated scenario metrics",
+        "data/phase8/processed/OPENING_DEBT_COMPARISON.csv": "date-consistent historical and projected opening-debt comparison",
+        "data/phase8/processed/TERM_SIZING_SENSITIVITY.csv": "balanced Phase 7 sources-and-uses pairings",
+        "data/phase8/processed/AMORTIZATION_SENSITIVITY_RESULTS.csv": "integrated Phase 7 amortization sensitivity",
         "data/phase9/processed/BORROWER_RISK_ASSESSMENT.csv": "upstream borrower-risk assessment supporting the owner-reviewed project-specific qualitative assessment",
         "data/phase9/processed/RECOVERY_CASE_REGISTER.csv": "alternative illustrative recovery sensitivities",
         "data/phase9/processed/MONITORING_SCHEDULE.csv": "monitoring, warning, and escalation package",
@@ -628,15 +701,17 @@ def make_memo(metrics: list[dict[str, str]]) -> str:
 
 **Committee date / information cutoff:** December 15, 2025
 **Hypothetical closing:** January 31, 2026
-**Recommendation:** **Conditional Approval**
+**Recommendation:** **{RECOMMENDATION_DISPLAY}**
+
+**{NO_FINAL_AUTHORIZATION}**
 **Owner-review status:** `{RECOMMENDATION_STATUS}`
 **Public-information case:** project recommendation only - not an actual bank approval, lender commitment, funding authorization, official compliance certificate, appraisal, legal opinion, official risk grade, or official recovery estimate.
 
 ## 1. Decision and exposure
 
-**Conditional Approval** of a {m('term_facility', 'selected')} fully funded term facility and {m('revolver_commitment', 'selected')} revolver, with a participating-bank hold up to {m('bank_hold_cap', 'selected')} of combined commitments. All material conditions, covenants, monitoring requirements, and fallback protections remain mandatory. The borrower is Quanex Building Products Corporation; the project-specific qualitative risk assessment is **Elevated** [{ix[('borrower_risk_grade', 'project_specific')]['metric_id']}], not a bank grade, agency rating, calibrated probability of default, or official borrower classification.
+**{RECOMMENDATION_DISPLAY}** Approve the selected {m('term_facility', 'selected')} fully funded term facility and {m('revolver_commitment', 'selected')} revolver for continued diligence and definitive documentation, with a participating-bank hold up to {m('bank_hold_cap', 'selected')} of combined commitments. **{NO_FINAL_AUTHORIZATION}** All material conditions, covenants, monitoring requirements, and fallback protections remain mandatory. The borrower is Quanex Building Products Corporation; the project-specific qualitative risk assessment is **Elevated** [{ix[('borrower_risk_grade', 'project_specific')]['metric_id']}], not a bank grade, agency rating, calibrated probability of default, or official borrower classification.
 
-What we lend: the selected senior secured cash-flow structure described above, not the original $650m request. Why refinance: term out persistent acquisition-related revolver usage, preserve working-capital capacity, add amortization and intervention rights, and extend maturity from August 2029 to January 2031. How repaid: primary repayment is recurring operating cash available for debt service after operating requirements, cash interest, cash taxes, working-capital needs, necessary maintenance capital expenditure, and other required uses. Scheduled amortization and the ECF sweep are payment mechanisms applied to available cash, not repayment sources. What can go wrong: opening leverage of 3.2285x near the 3.25x warning, no same-horizon deleveraging benefit, an October 31, 2026 moderate covenant breach that mitigation does not cure, integration/margin/working-capital/control risk, severe liquidity exhaustion and payment failure, and a $324.780m bank-debt maturity gap at January 31, 2031. Why acceptable conditionally: base interim debt service and minimum liquidity hold, the moderate breach creates early intervention while liquidity and payment capacity remain available, the bank hold is capped, no waiver is assumed, and a failed material condition triggers the existing-facility fallback rather than more debt. [P10D-001:P10D-018]
+What we lend: the selected senior secured cash-flow structure described above, not the original $650m request. At January 31, 2026, selected projected closing debt of $727.517m is $5.000m below projected existing debt of $732.517m only because the conditional $15m non-debt source exceeds assumed $10m refinancing fees. If that source is unavailable, resize, obtain another acceptable non-debt source, or do not close—never replace it with debt. Why refinance: preserve working-capital capacity, add amortization, ECF sweep, reporting and intervention rights, and extend maturity from August 2029 to January 2031; the case is not supported by faster common-horizon deleveraging. How repaid: primary repayment is recurring operating cash available for debt service after operating requirements, cash interest, cash taxes, working-capital needs, necessary maintenance capital expenditure, and other required uses. Scheduled amortization and the ECF sweep are payment mechanisms applied to available cash, not repayment sources. What can go wrong: opening leverage of 3.2285x near the 3.25x warning, a $19.385m common-horizon debt disadvantage, an October 31, 2026 moderate covenant breach that mitigation does not cure, integration/margin/working-capital/control risk, severe liquidity exhaustion and payment failure, and a $324.780m bank-debt maturity gap at January 31, 2031. Why acceptable conditionally: base interim debt service and minimum liquidity hold, the moderate breach creates early intervention while liquidity and payment capacity remain available, the bank hold is capped, no waiver is assumed, and a failed material condition triggers the existing-facility fallback rather than more debt. [P10D-001:P10D-018]
 
 The proposed refinancing is not justified by faster same-horizon debt reduction. It is supportable only for its maturity extension, liquidity structure, amortization, lender protections, and monitoring package, subject to acceptable final economics and documentation.
 
@@ -678,9 +753,9 @@ At the common July 31, 2029 horizon, selected total funded debt is {m('selected_
 
 ## 7. Downside and covenant intervention
 
-Moderate unmitigated FY2026 annual EBITDA is {m('fy2026_lender_ebitda', 'MODERATE_UNMITIGATED')}; maximum leverage / minimum coverage over the forecast are {m('maximum_gross_leverage', 'MODERATE_UNMITIGATED')} / {m('minimum_cash_interest_coverage', 'MODERATE_UNMITIGATED')}. Moderate mitigated maximum leverage / minimum coverage are {m('maximum_gross_leverage', 'MODERATE_MITIGATED')} / {m('minimum_cash_interest_coverage', 'MODERATE_MITIGATED')}. Both paths warn and breach on October 31, 2026; mitigation does not restore leverage covenant compliance. Minimum all-in liquidity over the forecast remains positive at {m('all_in_minimum_liquidity', 'MODERATE_UNMITIGATED')} / {m('all_in_minimum_liquidity', 'MODERATE_MITIGATED')}, and neither modeled path reaches liquidity exhaustion or payment failure. No automatic waiver is assumed. January 31, 2031 bank-debt gaps are {m('unsupported_maturity_gap', 'MODERATE_UNMITIGATED')} / {m('unsupported_maturity_gap', 'MODERATE_MITIGATED')}. [P10M moderate paths]
+Moderate unmitigated FY2026 annual EBITDA is {m('fy2026_lender_ebitda', 'MODERATE_UNMITIGATED')}; maximum quarterly-test leverage / minimum coverage over the forecast are {m('maximum_quarterly_test_leverage', 'MODERATE_UNMITIGATED')} / {m('minimum_cash_interest_coverage', 'MODERATE_UNMITIGATED')}. Moderate mitigated maximum quarterly-test leverage / minimum coverage are {m('maximum_quarterly_test_leverage', 'MODERATE_MITIGATED')} / {m('minimum_cash_interest_coverage', 'MODERATE_MITIGATED')}. Both paths warn and breach on October 31, 2026; mitigation does not restore leverage covenant compliance. Minimum all-in liquidity over the forecast remains positive at {m('all_in_minimum_liquidity', 'MODERATE_UNMITIGATED')} / {m('all_in_minimum_liquidity', 'MODERATE_MITIGATED')}, and neither modeled path reaches liquidity exhaustion or payment failure. No automatic waiver is assumed. January 31, 2031 bank-debt gaps are {m('unsupported_maturity_gap', 'MODERATE_UNMITIGATED')} / {m('unsupported_maturity_gap', 'MODERATE_MITIGATED')}. [P10M moderate paths]
 
-Severe unmitigated reaches warning in April 2026, breach in October 2026, zero usable liquidity in July 2027, and mandatory cash-interest failure on December 31, 2027. Maximum leverage / minimum coverage are {m('maximum_gross_leverage', 'SEVERE_UNMITIGATED')} / {m('minimum_cash_interest_coverage', 'SEVERE_UNMITIGATED')}; the maturity gap is {m('unsupported_maturity_gap', 'SEVERE_UNMITIGATED')}. Severe mitigation delays but does not eliminate failure and leaves {m('unsupported_maturity_gap', 'SEVERE_MITIGATED')}. Lower debt caused by curtailed borrowing or unpaid obligations is not improvement. [P10M-066:P10M-074; P10CM-021:P10CM-023]
+Severe unmitigated reaches warning in April 2026, breach in October 2026, zero usable liquidity in July 2027, and mandatory cash-interest failure on December 31, 2027. Maximum quarterly-test leverage / minimum coverage are {m('maximum_quarterly_test_leverage', 'SEVERE_UNMITIGATED')} / {m('minimum_cash_interest_coverage', 'SEVERE_UNMITIGATED')}; the maturity gap is {m('unsupported_maturity_gap', 'SEVERE_UNMITIGATED')}. Severe mitigation delays but does not eliminate failure and leaves {m('unsupported_maturity_gap', 'SEVERE_MITIGATED')}. Lower debt caused by curtailed borrowing or unpaid obligations is not improvement. [P10M-066:P10M-074; P10CM-021:P10CM-023]
 
 ## 8. Recovery and risk assessment
 
@@ -692,11 +767,11 @@ Official facility recovery remains **N/D** [{ix[('official_facility_recovery', '
 
 Closing conditions cover the verified $15m source; final payoff and funds flow; closing coverage; covenant and draw definitions; final economics; domestic guarantees; collateral, releases, perfection, and priority; foreign-cash treatment; LC mechanics; projections; legal/KYC/tax/authority; and full committed financing. Ongoing protections cover distributions, minimum liquidity, reporting, certificates, control remediation, and maturity planning. Analyst warnings remain distinct from covenant breaches. [P10CM-001:P10CM-026]
 
-At the July 31, 2029 common horizon, the selected structure leaves approximately $19.4 million more total funded debt than retaining the existing facilities. Quanex could therefore avoid refinancing fees and near-term debt expansion by retaining or amending its current financing. The lower selected maturity gap is achieved partly because the proposed facility remains outstanding approximately 18 months longer.
+The strongest counterargument is that refinancing incurs fees and unresolved economics; the selected structure leaves $19.385 million more total funded debt than existing facilities at the July 31, 2029 common horizon; moderate stress breaches in October 2026; refinancing dependency remains unresolved; and the lower selected January 31, 2031 ultimate gap benefits partly from approximately 18 additional months. Retaining or amending the existing facilities remains the mandatory fallback if a material closing condition fails.
 
 The response is not faster deleveraging or moderate covenant survival. If fully conditioned, the selected structure reallocates acquisition usage into term debt, preserves working-capital capacity, adds amortization, a sweep, earlier intervention and monitoring, extends maturity, caps the bank hold, and supplies a mandatory fallback. Without those protections, evidence, and acceptable economics, the counterargument wins and the modeled transaction should not close.
 
-**Conclusion:** **Conditional Approval**; owner-review status `{RECOMMENDATION_STATUS}` for all 18 P10D decisions. This project recommendation does not authorize funding and does not represent actual bank approval or commitment.
+**Conclusion:** **{RECOMMENDATION_DISPLAY}** Owner-review status `{RECOMMENDATION_STATUS}` for all 18 P10D decisions. **{NO_FINAL_AUTHORIZATION}**
 
 ---
 
@@ -715,11 +790,11 @@ The response is not faster deleveraging or moderate covenant survival. If fully 
 
 ### Appendix B — scenario and maturity comparison
 
-| Case | Max leverage | Min coverage | Min liquidity | Unsupported maturity gap |
+| Case | Maximum quarterly-test leverage | Min coverage | Min liquidity | Unsupported maturity gap |
 |---|---:|---:|---:|---:|
-| Base | {m('maximum_gross_leverage', 'BASE')} | {m('minimum_cash_interest_coverage', 'BASE')} | {m('all_in_minimum_liquidity', 'BASE')} | {m('unsupported_maturity_gap', 'BASE')} |
-| Moderate unmitigated | {m('maximum_gross_leverage', 'MODERATE_UNMITIGATED')} | {m('minimum_cash_interest_coverage', 'MODERATE_UNMITIGATED')} | {m('all_in_minimum_liquidity', 'MODERATE_UNMITIGATED')} | {m('unsupported_maturity_gap', 'MODERATE_UNMITIGATED')} |
-| Severe unmitigated | {m('maximum_gross_leverage', 'SEVERE_UNMITIGATED')} | {m('minimum_cash_interest_coverage', 'SEVERE_UNMITIGATED')} | {m('all_in_minimum_liquidity', 'SEVERE_UNMITIGATED')} | {m('unsupported_maturity_gap', 'SEVERE_UNMITIGATED')} |
+| Base | {m('maximum_quarterly_test_leverage', 'BASE')} | {m('minimum_cash_interest_coverage', 'BASE')} | {m('all_in_minimum_liquidity', 'BASE')} | {m('unsupported_maturity_gap', 'BASE')} |
+| Moderate unmitigated | {m('maximum_quarterly_test_leverage', 'MODERATE_UNMITIGATED')} | {m('minimum_cash_interest_coverage', 'MODERATE_UNMITIGATED')} | {m('all_in_minimum_liquidity', 'MODERATE_UNMITIGATED')} | {m('unsupported_maturity_gap', 'MODERATE_UNMITIGATED')} |
+| Severe unmitigated | {m('maximum_quarterly_test_leverage', 'SEVERE_UNMITIGATED')} | {m('minimum_cash_interest_coverage', 'SEVERE_UNMITIGATED')} | {m('all_in_minimum_liquidity', 'SEVERE_UNMITIGATED')} | {m('unsupported_maturity_gap', 'SEVERE_UNMITIGATED')} |
 
 ### Appendix C — covenant and condition summary
 
@@ -738,11 +813,13 @@ def make_brief(metrics: list[dict[str, str]]) -> str:
     return f"""# Quanex credit committee brief
 
 **Information cutoff:** December 15, 2025 | **Hypothetical closing:** January 31, 2026
-**Recommendation:** **Conditional Approval** | **Owner-review status:** `{RECOMMENDATION_STATUS}`
+**Recommendation:** **{RECOMMENDATION_DISPLAY}** | **Owner-review status:** `{RECOMMENDATION_STATUS}`
+
+**{NO_FINAL_AUTHORIZATION}**
 
 ## Decision
 
-**Conditional Approval** of a {d('term_facility', 'selected')} fully funded term facility plus a {d('revolver_commitment', 'selected')} revolver, with a {d('opening_revolver_draw', 'selected')} opening draw, a bank hold up to {d('bank_hold_cap', 'selected')} of combined commitments, and a conditional {d('conditional_non_debt_source', 'selected')} non-debt source. The proposed refinancing is not justified by faster same-horizon debt reduction. It is supportable only for its maturity extension, liquidity structure, amortization, lender protections, and monitoring package, subject to acceptable final economics and documentation.
+Proceed with diligence and definitive documentation for a {d('term_facility', 'selected')} fully funded term facility plus a {d('revolver_commitment', 'selected')} revolver, with a {d('opening_revolver_draw', 'selected')} opening draw, a bank hold up to {d('bank_hold_cap', 'selected')} of combined commitments, and a conditional {d('conditional_non_debt_source', 'selected')} non-debt source. At January 31, 2026, selected projected closing debt of $727.517m is $5.000m below projected existing debt of $732.517m only because the conditional source exceeds assumed $10m fees. If unavailable, resize, obtain another acceptable non-debt source, or do not close; never substitute debt. The refinancing is supportable for liquidity structure, maturity extension, amortization, ECF sweep, reporting, and intervention—not faster common-horizon deleveraging.
 
 ## Repayment and key metrics
 
@@ -764,11 +841,11 @@ FY2025 cash conversion recovered; Base services interim debt; opening liquidity 
 
 ## Decisive risks and downside
 
-Opening leverage is 3.2285x, close to the 3.25x warning; Tyman integration, margin, working capital, capex, and controls remain material. Moderate unmitigated/mitigated maximum leverage is {d('maximum_gross_leverage', 'MODERATE_UNMITIGATED')} / {d('maximum_gross_leverage', 'MODERATE_MITIGATED')}; minimum coverage is {d('minimum_cash_interest_coverage', 'MODERATE_UNMITIGATED')} / {d('minimum_cash_interest_coverage', 'MODERATE_MITIGATED')}; minimum liquidity remains {d('all_in_minimum_liquidity', 'MODERATE_UNMITIGATED')} / {d('all_in_minimum_liquidity', 'MODERATE_MITIGATED')}. Both paths warn and breach on October 31, 2026; mitigation does not restore compliance, neither modeled path exhausts liquidity or fails payment, and no automatic waiver is assumed. January 31, 2031 moderate-unmitigated / severe-unmitigated bank-debt gaps are {d('unsupported_maturity_gap', 'MODERATE_UNMITIGATED')} / {d('unsupported_maturity_gap', 'SEVERE_UNMITIGATED')}. Severe stress reaches zero liquidity and payment failure; mitigation delays but does not remove failure.
+Opening leverage is 3.2285x, close to the 3.25x warning; Tyman integration, margin, working capital, capex, and controls remain material. Moderate unmitigated/mitigated maximum quarterly-test leverage is {d('maximum_quarterly_test_leverage', 'MODERATE_UNMITIGATED')} / {d('maximum_quarterly_test_leverage', 'MODERATE_MITIGATED')}; minimum coverage is {d('minimum_cash_interest_coverage', 'MODERATE_UNMITIGATED')} / {d('minimum_cash_interest_coverage', 'MODERATE_MITIGATED')}; minimum liquidity remains {d('all_in_minimum_liquidity', 'MODERATE_UNMITIGATED')} / {d('all_in_minimum_liquidity', 'MODERATE_MITIGATED')}. Both paths warn and breach on October 31, 2026; mitigation does not restore compliance, neither modeled path exhausts liquidity or fails payment, and no automatic waiver is assumed. January 31, 2031 moderate-unmitigated / severe-unmitigated bank-debt gaps are {d('unsupported_maturity_gap', 'MODERATE_UNMITIGATED')} / {d('unsupported_maturity_gap', 'SEVERE_UNMITIGATED')}. Severe stress reaches zero liquidity and payment failure; mitigation delays but does not remove failure.
 
 The proposed covenant is intended to create early lender intervention while liquidity and payment capacity remain available. Conditional approval accepts the possibility of an early moderate-case covenant breach only because the structure preserves substantial liquidity, separates breach from payment failure, mandates reporting and corrective action, and does not assume an automatic waiver.
 
-At the July 31, 2029 common horizon, the selected structure leaves approximately $19.4 million more total funded debt than retaining the existing facilities. Quanex could therefore avoid refinancing fees and near-term debt expansion by retaining or amending its current financing. The lower selected maturity gap is achieved partly because the proposed facility remains outstanding approximately 18 months longer.
+The strongest counterargument is refinancing fees and unresolved economics, $19.385m more selected debt at the July 31, 2029 common horizon, October 2026 moderate breach, continued refinancing dependency, and a lower selected ultimate gap that benefits partly from approximately 18 additional months. Retain or amend remains mandatory if a material closing condition fails.
 
 ## Principal conditions and fallback
 
@@ -791,7 +868,7 @@ The memo and brief are generated from the same registers as the workbook summary
 
 The repository-root `.gitattributes` classifies PDF deliverables as binary with `*.pdf -diff -merge -text`. This portable repository rule prevents system-level text-conversion attributes from treating valid PDF object and cross-reference syntax as text while preserving ordinary whitespace checks for source and data files.
 
-The July 31, 2029 common-horizon comparison uses total funded debt: $495.368m existing, $507.954m reference, and $514.754m selected. Ultimate gaps use bank debt and their contractual dates: $432.749m existing at August 1, 2029 and $340.948m reference / $324.780m selected at January 31, 2031. These measures are never conflated. Recovery methods remain alternatives. Official recovery and opening cash-interest coverage remain `N/D`. The decision remains a hypothetical public-information project recommendation, not an actual bank approval or commitment.
+The October 31, 2025 historical reference is $641.250m bank debt plus $62.619m retained lease/other debt, or $703.869m total funded debt. January 31, 2026 projected alternatives are compared separately at the same date: $732.517m existing, $742.517m reference, and $727.517m selected. Selected is $5.000m below projected existing only because the conditional $15m non-debt source exceeds assumed $10m fees. The July 31, 2029 common-horizon comparison uses total funded debt: $495.368m existing, $507.954m reference, and $514.754m selected. Ultimate gaps use bank debt and their contractual dates: $432.749m existing at August 1, 2029 and $340.948m reference / $324.780m selected at January 31, 2031. These measures are never conflated. Recovery methods remain alternatives. Official recovery and opening cash-interest coverage remain `N/D`. The decision remains a hypothetical public-information project recommendation, not an actual bank approval or commitment.
 """, encoding="utf-8")
     # Preserve the approved post-PDF-classification artifact byte-for-byte.  That
     # commit added the three-line Git-attribute paragraph with LF endings to an
@@ -806,17 +883,19 @@ The July 31, 2029 common-horizon comparison uses total funded debt: $495.368m ex
     ).encode("utf-8"))
     (DOCS / "DECISION_RATIONALE.md").write_text(f"""# Phase 10 decision rationale
 
-**Recommendation:** Conditional Approval, owner-review status `{RECOMMENDATION_STATUS}`.
+**Recommendation:** {RECOMMENDATION_DISPLAY}, owner-review status `{RECOMMENDATION_STATUS}`.
 
-The evidence supports conditional - not unconditional - approval because Base operations service interim debt, FY2025 cash conversion recovered, minimum liquidity is substantial, and the selected $635m term / $300m revolver structure adds amortization, an ECF sweep, intervention thresholds, and a defined fallback. Approval is constrained by 3.2285x opening leverage, no same-horizon deleveraging advantage, an October 31, 2026 moderate breach that mitigation does not cure, a $324.780m bank-debt gap at January 31, 2031, severe-case liquidity exhaustion and payment failure, Tyman integration and impairment risk, the cash-flow control weakness, and incomplete legal, collateral, cash-access, coverage, fee, and commitment evidence.
+**{NO_FINAL_AUTHORIZATION}**
 
-At the July 31, 2029 common horizon, selected total funded debt is $514.754m, $19.386m higher than existing and $6.800m higher than the reference structure. The selected refinancing is supportable only for maturity extension, liquidity structure, amortization, lender protections, and monitoring, subject to acceptable economics and documentation. Its lower January 31, 2031 bank-debt gap benefits partly from approximately 18 extra months. Primary repayment is recurring operating cash after required uses. Amortization and the ECF sweep are payment mechanisms; revolver capacity is liquidity support; refinancing is an unresolved separately underwritten dependency; recovery is a secondary backstop and official recovery is N/D.
+The evidence supports conditional - not unconditional - approval because Base operations service interim debt, FY2025 cash conversion recovered, minimum liquidity is substantial, and the selected $635m term / $300m revolver structure adds amortization, an ECF sweep, intervention thresholds, and a defined fallback. At January 31, 2026, selected projected debt is $5.000m below projected existing debt only because the conditional $15m non-debt source exceeds assumed $10m refinancing fees. Approval is constrained by 3.2285x opening leverage, no same-horizon deleveraging advantage, an October 31, 2026 moderate breach that mitigation does not cure, a $324.780m bank-debt gap at January 31, 2031, severe-case liquidity exhaustion and payment failure, Tyman integration and impairment risk, the cash-flow control weakness, and incomplete legal, collateral, cash-access, coverage, fee, and commitment evidence.
+
+At the July 31, 2029 common horizon, selected total funded debt is $514.754m, $19.385m higher than existing and $6.800m higher than the reference structure. The selected refinancing is supportable for maturity extension, liquidity structure, amortization, ECF sweep, reporting, and intervention, subject to acceptable economics and documentation—not faster common-horizon deleveraging. Its lower January 31, 2031 bank-debt gap benefits partly from approximately 18 extra months. Primary repayment is recurring operating cash after required uses. Amortization and the ECF sweep are payment mechanisms; revolver capacity is liquidity support; refinancing is an unresolved separately underwritten dependency; recovery is a secondary backstop and official recovery is N/D.
 
 There are {len(risks)} explicit strength/risk/alternative entries and {len(conditions)} categorized conditions and monitoring requirements. All 18 P10D decisions are owner reviewed, while every stated CP and unresolved diligence item remains open. If a material condition fails, debt, covenant loosening, inaccessible cash, refinancing, waiver, or unsupported recovery may not replace it; the mandatory fallback is retention or a limited amendment/extension.
 """, encoding="utf-8")
     (DOCS / "PHASE11_HANDOFF.md").write_text(f"""# Phase 11 handoff
 
-Phase 11 has not started. Phase 10 is an owner-reviewed Conditional Approval project recommendation with status `{RECOMMENDATION_STATUS}`. All 18 P10D decisions are owner reviewed, but no condition is represented as satisfied and no actual bank approval, lender commitment, funding authorization, legal opinion, official grade, or official recovery estimate is created. Phase 11 release QA must preserve the corrected repayment hierarchy, unfavorable common-horizon comparison, explicit horizons, moderate breach, mandatory fallback, and approved analytics.
+Phase 11 has not started. Phase 10 is an owner-reviewed `{RECOMMENDATION_DISPLAY}` project recommendation with status `{RECOMMENDATION_STATUS}`. {NO_FINAL_AUTHORIZATION} All 18 P10D decisions are owner reviewed, but no condition is represented as satisfied and no actual bank approval, lender commitment, legal opinion, official grade, or official recovery estimate is created. Phase 11 release QA must preserve the date-consistent opening-debt comparison, corrected repayment hierarchy, unfavorable common-horizon comparison, explicit horizons, moderate breach, mandatory fallback, and approved analytics.
 """, encoding="utf-8")
     (REPORTS / "credit_memo.md").write_text(make_memo(metrics), encoding="utf-8")
     (REPORTS / "committee_brief.md").write_text(make_brief(metrics), encoding="utf-8")
@@ -1022,6 +1101,9 @@ def consistency_results() -> list[dict[str, str]]:
         add("recommendation", f"{artifact_name} status", RECOMMENDATION_STATUS in text and "provisional_pending_owner_review" not in text, RECOMMENDATION_STATUS in text, True)
         add("recommendation", f"{artifact_name} conditional approval", "conditional approval" in text.lower(), "conditional approval" in text.lower(), True)
         add("recommendation", f"{artifact_name} fallback", "retain or amend" in text.lower(), "retain or amend" in text.lower(), True)
+        add("recommendation", f"{artifact_name} no final authorization", NO_FINAL_AUTHORIZATION in text, NO_FINAL_AUTHORIZATION in text, True)
+        add("comparison", f"{artifact_name} same-date closing", "$5.000m" in text and "January 31, 2026" in text and "$732.517m" in text and "$727.517m" in text, "checked", "same-date $5.000m advantage")
+        add("comparison", f"{artifact_name} no near-term expansion claim", "near-term debt expansion" not in text.lower(), "checked", "absent")
         add("cutoff", f"{artifact_name} cutoff", "December 15, 2025" in text, "December 15, 2025" in text, True)
     required_displays = [
         ("lender_base_ebitda", "FY2025"), ("opening_funded_debt", "selected"),
@@ -1033,7 +1115,8 @@ def consistency_results() -> list[dict[str, str]]:
         shown = ix[key]["display_value"]
         add("numerical", f"memo contains {key}", shown in memo, shown in memo, shown)
         add("numerical", f"brief contains {key}", shown in brief, shown in brief, shown)
-    add("workbook", "recommendation banner", "Conditional Approval" in xlsx_cell_text("Credit Summary", "C5"), xlsx_cell_text("Credit Summary", "C5"), "Conditional Approval")
+    add("workbook", "recommendation banner", RECOMMENDATION_DISPLAY in xlsx_cell_text("Credit Summary", "C5"), xlsx_cell_text("Credit Summary", "C5"), RECOMMENDATION_DISPLAY)
+    add("workbook", "no final authorization", NO_FINAL_AUTHORIZATION in xlsx_cell_text("Credit Summary", "C6"), xlsx_cell_text("Credit Summary", "C6"), NO_FINAL_AUTHORIZATION)
     add("workbook", "recommendation status", RECOMMENDATION_STATUS in xlsx_cell_text("Credit Summary", "I48"), xlsx_cell_text("Credit Summary", "I48"), RECOMMENDATION_STATUS)
     add("workbook", "fallback", "limited amendment/extension" in xlsx_cell_text("Credit Summary", "J54"), xlsx_cell_text("Credit Summary", "J54"), "limited amendment/extension")
     add("workbook", "official recovery", "N/D" in xlsx_cell_text("Credit Summary", "I55"), xlsx_cell_text("Credit Summary", "I55"), "N/D")
@@ -1113,8 +1196,13 @@ def validate(
         ("common_horizon_total_funded_debt", "reference"): Decimal("507.9536592508711071826688285"),
         ("common_horizon_total_funded_debt", "selected"): Decimal("514.753707786180339509466437"),
         ("selected_minus_existing_common_horizon_debt", "2029-07-31"): Decimal("19.3854265794703218545390241"),
-        ("maximum_gross_leverage", "MODERATE_UNMITIGATED"): Decimal("4.489250193362221"),
-        ("maximum_gross_leverage", "MODERATE_MITIGATED"): Decimal("4.467006108046972"),
+        ("opening_total_funded_debt", "existing_actual"): Decimal("703.869"),
+        ("opening_total_funded_debt", "existing_projected"): Decimal("732.51671875"),
+        ("opening_total_funded_debt", "reference_projected"): Decimal("742.51671875"),
+        ("opening_total_funded_debt", "selected_projected"): Decimal("727.51671875"),
+        ("selected_minus_existing_projected_closing_debt", "2026-01-31"): Decimal("-5"),
+        ("maximum_quarterly_test_leverage", "MODERATE_UNMITIGATED"): Decimal("4.489250193362221"),
+        ("maximum_quarterly_test_leverage", "MODERATE_MITIGATED"): Decimal("4.467006108046972"),
     }
     for key, expected in anchors.items():
         actual = dec(ix[key]["value"])
@@ -1130,7 +1218,10 @@ def validate(
     add("repayment", "recovery is secondary backstop", "secondary backstop" in decision_text or "secondary repayment backstops" in decision_text, "checked", "present")
     add("moderate", "moderate breach not cured", "mitigation does not restore" in decision_text and "october 31, 2026" in decision_text, "checked", "present")
     add("moderate", "no automatic waiver", "no automatic waiver" in decision_text, "checked", "present")
-    add("comparison", "no faster same-horizon claim", "not justified by faster same-horizon debt reduction" in decision_text and "selected is $19.386m higher" in decision_text, "checked", "corrected")
+    add("comparison", "same-date projected opening comparison", "$5.000m below projected existing" in decision_text and "january 31, 2026" in decision_text, "checked", "corrected")
+    add("comparison", "no faster same-horizon claim", "faster common-horizon deleveraging" in decision_text and "$19.385m" in decision_text, "checked", "corrected")
+    add("comparison", "no near-term expansion claim", "near-term debt expansion" not in decision_text, "checked", "absent")
+    add("recommendation", "no final authorization", NO_FINAL_AUTHORIZATION.lower() in decision_text, "checked", "present")
     add("risk", "risk and mitigant matrix", len(risks) >= 10 and all(r["residual_risk"] for r in risks), len(risks), ">=10 complete")
     categories = {r["category"] for r in conditions}
     add("conditions", "categories remain distinct", categories == {"condition_precedent", "ongoing_covenant", "monitoring_requirement", "analyst_warning", "unresolved_diligence"}, sorted(categories), "five required categories")
@@ -1143,7 +1234,7 @@ def validate(
     add("documents", "manual rendered-page QA complete", len(qa) == 12 and all(r["status"] == "PASS" for r in qa), len(qa), "12 PASS rows")
     add("workbook", "14 approved sheets", wb["sheet_count"] == 14, wb["sheet_count"], 14)
     add("workbook", "seven native charts", wb["chart_count"] == 7, wb["chart_count"], 7)
-    add("workbook", "formula count preserved", wb["formula_count"] == 2902, wb["formula_count"], 2902)
+    add("workbook", "formula count preserved", wb["formula_count"] == 2897, wb["formula_count"], 2897)
     add("workbook", "saved Base", wb["saved_scenario"] == "Base", wb["saved_scenario"], "Base")
     add("workbook", "no external links", wb["external_links"] == 0, wb["external_links"], 0)
     add("workbook", "no formula errors", wb["formula_errors"] == 0, wb["formula_errors"], 0)
@@ -1158,8 +1249,19 @@ def validate(
     add("scope", "no Phase 12 implementation", not (ROOT / "data" / "phase12").exists() and not (ROOT / "docs" / "phase-12").exists() and not (ROOT / "scripts" / "phase12.py").exists(), "checked", "absent")
     allowed_exact = {
         ".gitattributes", "README.md", "model/Quanex_Credit_Underwriting.xlsx", "scripts/phase4.py", "scripts/phase5.py",
-        "scripts/phase6.py", "scripts/phase7.py", "scripts/phase9.py", "scripts/phase10.py", "scripts/build-phase10.mjs",
-        "scripts/render-phase10.py", "scripts/phase11.py", "scripts/render-phase11.py", "tests/test_phase10.py", "tests/test_phase11.py",
+        "scripts/phase6.py", "scripts/phase7.py", "scripts/phase8.py", "scripts/phase9.py", "scripts/phase10.py", "scripts/phase11.py",
+        "scripts/build-phase8.mjs", "scripts/build-phase10.mjs", "scripts/recalculate-phase8.py", "scripts/render-phase10.py",
+        "scripts/render-phase11.py", "tests/test_phase8.py", "tests/test_phase9.py", "tests/test_phase10.py",
+        "tests/test_phase11.py", "tests/test_audit_remediation.py",
+        "docs/phase-7/COVENANT_DESIGN.md", "docs/phase-8/METHODOLOGY.md", "docs/phase-8/CALCULATION_VALIDATION.md",
+        "docs/phase-8/SOURCE_LEDGER.csv", "docs/phase-8/WORKBOOK_GUIDE.md",
+        "docs/phase-9/METHODOLOGY.md",
+        "data/phase8/raw/STARTING_CHECKPOINT.csv", "data/phase8/processed/SCENARIO_CAPTURE_RESULTS.csv",
+        "data/phase8/processed/WORKBOOK_MAP.csv", "data/phase8/processed/WORKBOOK_VALIDATION_RESULTS.csv",
+        "data/phase8/processed/FORMULA_PARITY_RESULTS.csv", "data/phase8/processed/OPENING_DEBT_COMPARISON.csv",
+        "data/phase8/processed/TERM_SIZING_SENSITIVITY.csv", "data/phase8/processed/AMORTIZATION_SENSITIVITY_RESULTS.csv",
+        "data/phase8/processed/DYNAMIC_TEST_EVIDENCE.csv", "data/phase9/raw/STARTING_CHECKPOINT.csv",
+        "data/phase9/processed/DYNAMIC_RECOVERY_TEST_EVIDENCE.csv", "data/phase9/processed/VALIDATION_RESULTS.csv",
     }
     paths = changed_paths()
     unexpected = [p for p in paths if p not in allowed_exact and not p.startswith("data/phase10/") and not p.startswith("docs/phase-10/") and not p.startswith("data/phase11/") and not p.startswith("docs/phase-11/") and not p.startswith("reports/")]
@@ -1183,8 +1285,20 @@ def validate(
         "data/phase5", "data/phase6", "data/phase7", "data/phase8", "data/phase9", "docs/phase-0",
         "docs/phase-1", "docs/phase-2", "docs/phase-3", "docs/phase-4", "docs/phase-5", "docs/phase-6",
         "docs/phase-7", "docs/phase-8", "docs/phase-9",
-    ], cwd=ROOT, text=True, capture_output=True, check=True).stdout.strip()
-    add("repository", "prior analytical artifacts unchanged", prior == "", prior, "none")
+    ], cwd=ROOT, text=True, capture_output=True, check=True).stdout.splitlines()
+    allowed_prior = {
+        "docs/phase-7/COVENANT_DESIGN.md", "docs/phase-8/METHODOLOGY.md", "docs/phase-8/CALCULATION_VALIDATION.md",
+        "docs/phase-8/SOURCE_LEDGER.csv", "docs/phase-8/WORKBOOK_GUIDE.md",
+        "docs/phase-9/METHODOLOGY.md",
+        "data/phase8/raw/STARTING_CHECKPOINT.csv", "data/phase8/processed/SCENARIO_CAPTURE_RESULTS.csv",
+        "data/phase8/processed/WORKBOOK_MAP.csv", "data/phase8/processed/WORKBOOK_VALIDATION_RESULTS.csv",
+        "data/phase8/processed/FORMULA_PARITY_RESULTS.csv", "data/phase8/processed/OPENING_DEBT_COMPARISON.csv",
+        "data/phase8/processed/TERM_SIZING_SENSITIVITY.csv", "data/phase8/processed/AMORTIZATION_SENSITIVITY_RESULTS.csv",
+        "data/phase8/processed/DYNAMIC_TEST_EVIDENCE.csv", "data/phase9/raw/STARTING_CHECKPOINT.csv",
+        "data/phase9/processed/DYNAMIC_RECOVERY_TEST_EVIDENCE.csv", "data/phase9/processed/VALIDATION_RESULTS.csv",
+    }
+    unexpected_prior = [path for path in prior if path and path.replace("\\", "/") not in allowed_prior]
+    add("repository", "prior analytical changes limited to audit remediation", not unexpected_prior, ";".join(unexpected_prior), "none")
     prohibited = re.compile(r"(?i)(api[_-]?key|secret\s*=|password\s*=|bearer\s+[A-Za-z0-9])")
     text_paths = [ROOT / p for p in paths if (ROOT / p).is_file() and (ROOT / p).suffix.lower() in {".py", ".mjs", ".md", ".csv", ".json", ".ps1"}]
     suspicious = [str(p.relative_to(ROOT)) for p in text_paths if prohibited.search(p.read_text(encoding="utf-8", errors="ignore"))]
@@ -1212,6 +1326,10 @@ def all_workflow() -> dict[str, object]:
     payload = build_data()
     build_workbook()
     engine = canonicalize_workbook()
+    phase8_dynamic = phase8.dynamic()
+    phase9_dynamic = phase9.dynamic()
+    phase8.validate_workbook(phase8.run_libreoffice("inspect"), require_dynamic=True)
+    phase9.validate(phase9.run_libreoffice("inspect"), require_dynamic=True)
     build_pdfs()
     controls = validate(engine)
     wb = workbook_metadata()
@@ -1224,6 +1342,8 @@ def all_workflow() -> dict[str, object]:
         "chart_count": wb["chart_count"], "workbook_sha256": wb["sha256"],
         "normalized_workbook_fingerprint": wb["normalized_fingerprint"],
         "recommendation_status": RECOMMENDATION_STATUS,
+        "phase8_dynamic_tests": len(phase8_dynamic.get("tests", [])),
+        "phase9_dynamic_tests": len(phase9_dynamic.get("tests", [])),
     }
     print("Phase 10 complete: " + json.dumps(summary, sort_keys=True))
     return summary
@@ -1249,9 +1369,8 @@ def verify_isolated() -> dict[str, object]:
             sys.executable, "-B", str(ROOT / "scripts" / f"phase{phase}.py"), "validate",
         ])
 
-    # These legacy validation commands intentionally persist calculated workbook
-    # state and generated validation CSVs. They run here only because this entire
-    # repository is disposable; restore the clone baseline before Phase 10 checks.
+    # Prior-phase validation may refresh deterministic validation CSVs. Run it in
+    # the disposable clone and restore the clone baseline before Phase 10 checks.
     validation_outputs["phase8"] = run_command([
         sys.executable, "-B", str(ROOT / "scripts" / "phase8.py"), "validate",
     ])

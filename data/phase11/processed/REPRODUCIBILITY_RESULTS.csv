@@ -1,7 +1,12 @@
 reproducibility_id,test_name,status,observed,expected,notes
-P11R-001,local clone began at approved Phase 10,PASS,9fca23a949d1f8d8dee6f37906cb086ec6cda994,9fca23a949d1f8d8dee6f37906cb086ec6cda994,No new analytical evidence was retrieved.
-P11R-002,analytical reproduction required no network,PASS,0,0,No new analytical evidence was retrieved.
-P11R-003,deterministic artifacts exact,PASS,0,0,No new analytical evidence was retrieved.
-P11R-004,workbook normalized fingerprint,PASS,49c2dac4c4045f68200cd85c1c3b6a76acc6b7c219c4bef04c32c7846b20d42c,49c2dac4c4045f68200cd85c1c3b6a76acc6b7c219c4bef04c32c7846b20d42c,No new analytical evidence was retrieved.
-P11R-005,workbook semantic differences,PASS,0,0,No new analytical evidence was retrieved.
-P11R-006,disposable clone cleanup,PASS,disposable local no-hardlinks clone,temporary clone removed,No new analytical evidence was retrieved.
+P11R-001,local clone began at approved Phase 10,PASS,ce656ebfca67f2bd34a78273f72367e39c0c2037,ce656ebfca67f2bd34a78273f72367e39c0c2037,No new analytical evidence was retrieved.
+P11R-002,disposable clone has independent Git metadata,PASS,True,True,No new analytical evidence was retrieved.
+P11R-003,disposable clone uses no hardlinks,PASS,True,True,No new analytical evidence was retrieved.
+P11R-004,core.autocrlf false before initial checkout,PASS,false,false,No new analytical evidence was retrieved.
+P11R-005,canonical Phase 3 bytes preserved,PASS,7,7 exact paths unchanged,No new analytical evidence was retrieved.
+P11R-006,fixed remediation overlay,PASS,62,62 explicit paths,No new analytical evidence was retrieved.
+P11R-007,analytical reproduction required no network,PASS,0,0,No new analytical evidence was retrieved.
+P11R-008,deterministic artifacts exact,PASS,0,0,No new analytical evidence was retrieved.
+P11R-009,workbook normalized fingerprint,PASS,cf536570671a6baf2a7b019d46444cb839bb906943af8f0f22929772c04303ec,cf536570671a6baf2a7b019d46444cb839bb906943af8f0f22929772c04303ec,No new analytical evidence was retrieved.
+P11R-010,workbook semantic differences,PASS,0,0,No new analytical evidence was retrieved.
+P11R-011,disposable clone cleanup,PASS,disposable local no-hardlinks clone,temporary clone removed,No new analytical evidence was retrieved.

@@ -127,9 +127,9 @@ class Phase8WorkbookTests(unittest.TestCase):
 
     def test_04_native_formula_population(self) -> None:
         if (ROOT / "data" / "phase9").exists():
-            self.assertGreaterEqual(phase8.workbook_structure()["formula_count"], 2771)
+            self.assertGreaterEqual(phase8.workbook_structure()["formula_count"], 2742)
         else:
-            self.assertEqual(phase8.workbook_structure()["formula_count"], 2771)
+            self.assertEqual(phase8.workbook_structure()["formula_count"], 2742)
         for sheet in ("Transaction", "Forecast", "Debt Schedule", "Liquidity", "Covenants"):
             self.assertIn("<f", self.xml_text(sheet), sheet)
 
@@ -273,12 +273,21 @@ class Phase8WorkbookTests(unittest.TestCase):
              "docs/phase-6", "docs/phase-7"],
             cwd=ROOT, text=True, capture_output=True, check=True,
         )
-        self.assertEqual(result.stdout.strip(), "")
+        changed = {line for line in result.stdout.splitlines() if line}
+        self.assertLessEqual(changed, {"docs/phase-7/COVENANT_DESIGN.md"})
 
     def test_30_external_engine_dynamic_behavior(self) -> None:
         report = phase8.dynamic()
         self.assertEqual(report["dynamic_status"], "PASS")
-        self.assertEqual(report["test_count"], 24)
+        self.assertEqual(report["test_count"], 28)
+
+    def test_31_dynamic_validation_has_separate_evidence(self) -> None:
+        dynamic = next(row for row in self.validations if row["validation_id"] == "P8V-012")
+        self.assertEqual(dynamic["status"], "PASS")
+        self.assertNotEqual(dynamic["observed"], "not_run")
+        evidence = rows(phase8.DYNAMIC_EVIDENCE)
+        self.assertEqual(len(evidence), 28)
+        self.assertTrue(all(row["status"] == "PASS" for row in evidence))
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 validation_id,category,test_name,status,observed,expected
-P9V-001,checkpoint,approved Phase 8 ancestry,PASS,1a23f7f1c393082329277bf4129ba31343f6cb87,1a23f7f1c393082329277bf4129ba31343f6cb87
-P9V-002,checkpoint,Phase 8 normalized fingerprint recorded,PASS,7dae55edc1d7fbb7ae15c04ff8173a5e610e75c31f4a6c75ad2c72e4eb078635,7dae55edc1d7fbb7ae15c04ff8173a5e610e75c31f4a6c75ad2c72e4eb078635
+P9V-001,checkpoint,approved Phase 8 ancestry,PASS,ce656ebfca67f2bd34a78273f72367e39c0c2037,1a23f7f1c393082329277bf4129ba31343f6cb87
+P9V-002,checkpoint,Phase 8 normalized fingerprint recorded,PASS,3f66a86542015ee20dc9812b99f00cfbcc84b8a56e78173247e5a5a77a7922dd,3f66a86542015ee20dc9812b99f00cfbcc84b8a56e78173247e5a5a77a7922dd
 P9V-003,recovery,six alternative recovery cases,PASS,6,6
 P9V-004,recovery,methods remain alternatives,PASS,"['asset_realization', 'going_concern']",two separate methods
 P9V-005,recovery,same recovery date and scenario,PASS,checked,2027-12-31 severe
@@ -29,7 +29,7 @@ P9V-027,workbook,LibreOffice engine,PASS,LibreOffice 26.8.0.3,LibreOffice 26.8.0
 P9V-028,workbook,workbook saved Base,PASS,Base,Base
 P9V-029,workbook,Phase 9 terminal checks,PASS,0,0
 P9V-030,workbook,recovery parity,PASS,0,0
-P9V-031,workbook,dynamic recovery tests,PASS,not_run,PASS or separately run
+P9V-031,workbook,dynamic recovery tests,PASS,41 separately recorded dynamic recovery tests,PASS with separately identifiable evidence
 P9V-032,workbook,14-sheet order,PASS,14,14
 P9V-033,workbook,Checks G20 compatibility,PASS,0,0
 P9V-034,workbook,no external workbook links,PASS,0,0

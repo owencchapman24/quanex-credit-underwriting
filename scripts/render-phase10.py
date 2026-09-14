@@ -29,7 +29,8 @@ GRAY = colors.HexColor("#F2F2F2")
 LINE = colors.HexColor("#B7C9D6")
 TEXT = colors.HexColor("#222222")
 WHITE = colors.white
-STATUS = "owner_reviewed | Conditional Approval"
+STATUS = "owner_reviewed | Conditional Approval — proceed with diligence and definitive documentation."
+NO_FINAL_AUTHORIZATION = "No final commitment or funding authorization exists until all material conditions are satisfied."
 
 
 def read_csv(path: Path) -> list[dict[str, str]]:
@@ -273,12 +274,12 @@ def build_memo(root: Path, metrics: dict[tuple[str, str], dict[str, str]], chart
 
     p = PageWriter(c, "Quanex credit committee memorandum", 1, total)
     p.section("1. Decision and exposure")
-    p.callout("PROJECT RECOMMENDATION - CONDITIONAL APPROVAL",
+    p.callout("CONDITIONAL APPROVAL - PROCEED WITH DILIGENCE AND DEFINITIVE DOCUMENTATION",
               "$635m fully funded term facility plus $300m revolver; participating-bank hold up to $50m combined. "
-              "Status: owner_reviewed. Hypothetical public-information case; not an actual bank approval, commitment, or funding authorization.", PALE_BLUE, 67)
+              f"Status: owner_reviewed. {NO_FINAL_AUTHORIZATION}", PALE_BLUE, 78)
     p.table(["Question", "Committee answer"], [
         ["What are we lending?", "$635m term + $300m revolver; $29.898m opening draw; $15m non-debt source required."],
-        ["Why refinance?", "Not faster same-horizon paydown. Benefit is maturity, liquidity structure, amortization, protections, and monitoring."],
+        ["Why refinance?", "$5.000m lower same-date closing debt only from the conditional source. Benefits are maturity, liquidity, amortization, sweep, reporting, and intervention."],
         ["How are we repaid?", "Primary: recurring operating cash after all required uses. Amortization/sweep are payment mechanisms. Recovery is the secondary backstop."],
         ["What can go wrong?", "3.2285x opening leverage; moderate breach 10/31/26; severe liquidity/payment failure; Tyman/control risk; $324.780m 01/31/31 gap."],
         ["Why acceptable?", "Moderate breach enables early intervention while liquidity/payment capacity remain; no automatic waiver; failed conditions trigger fallback."],
@@ -290,7 +291,7 @@ def build_memo(root: Path, metrics: dict[tuple[str, str], dict[str, str]], chart
         ["Borrower risk assessment", "Elevated - project-specific qualitative", "Phase 10 register"],
         ["Official recovery", "N/D", "P10M-096"],
     ], [150, 245, 133], row_height=25, font_size=7.5)
-    p.paragraph("Critical failure rule: if the $15m source, satisfactory closing coverage, acceptable documents, full commitments, or another material condition is absent, do not add debt, loosen covenants, assume inaccessible cash, refinancing, waiver, or recovery. Retain or amend existing facilities through a limited amendment/extension.", size=8.4)
+    p.paragraph("Critical failure rule: if the $15m source, satisfactory closing coverage, acceptable documents, full commitments, or another material condition is absent, resize, obtain another acceptable non-debt source, or do not close. Do not add debt, loosen covenants, assume inaccessible cash, refinancing, waiver, or recovery. Retain or amend existing facilities through a limited amendment/extension.", size=8.4)
     c.showPage()
 
     p = PageWriter(c, "Quanex credit committee memorandum", 2, total)
@@ -312,8 +313,14 @@ def build_memo(root: Path, metrics: dict[tuple[str, str], dict[str, str]], chart
     ]:
         p.bullet(text)
     p.heading("Live alternatives and strongest counterargument")
+    p.table(["01/31/2026 projected alternative", "Bank debt", "Other funded debt", "Total funded debt"], [
+        ["Existing facilities", "$669.898m", "$62.619m", "$732.517m"],
+        ["$650m reference", "$679.898m", "$62.619m", "$742.517m"],
+        ["$635m selected", "$664.898m", "$62.619m", "$727.517m"],
+    ], [170, 115, 115, 128], row_height=21, font_size=7.1)
+    p.paragraph("Historical reference only at 10/31/2025: $641.250m bank debt + $62.619m retained lease/other debt = $703.869m total funded debt. Selected is $5.000m below projected existing at 01/31/2026 only because the conditional $15m non-debt source exceeds assumed $10m fees.", size=7.8, color=NAVY)
     p.callout("STRONGEST COUNTERARGUMENT",
-              "At 07/31/2029, selected total funded debt is $514.754m, $19.386m more than existing. Quanex could avoid fees and near-term debt expansion by retaining/amending. The lower selected maturity gap partly reflects about 18 extra months.", PALE_TAN, 66)
+              "Refinancing incurs fees and unresolved economics; at 07/31/2029 selected debt is $514.754m, $19.385m above existing; moderate stress breaches 10/31/2026; refinancing remains unresolved; and the lower selected gap benefits partly from about 18 extra months.", PALE_TAN, 66)
     p.paragraph("Response: the refinance is not justified by faster same-horizon debt reduction. It is supportable only for maturity extension, liquidity structure, amortization, lender protections, and monitoring, subject to acceptable final economics and documents. Otherwise the fallback controls.", size=8.5)
     p.table(["Alternative", "07/31/29 total funded debt", "Ultimate bank-debt gap / date"], [
         ["Retain existing", "$495.368m", "$432.749m / 08/01/2029"],
@@ -321,7 +328,7 @@ def build_memo(root: Path, metrics: dict[tuple[str, str], dict[str, str]], chart
         ["$650m reference", "$507.954m", "$340.948m / 01/31/2031"],
         ["$635m selected", "$514.754m", "$324.780m / 01/31/2031"],
     ], [125, 165, 238], row_height=24, font_size=7.2)
-    p.paragraph("Selected is $19.386m above existing and $6.800m above reference at the common horizon. Ultimate bank-debt gaps use different maturity dates and cash-generation periods and are not directly comparable.", size=8.2, color=NAVY)
+    p.paragraph("Selected is $19.385m above existing and $6.800m above reference at the common horizon. Ultimate bank-debt gaps use different maturity dates and cash-generation periods and are not directly comparable.", size=8.2, color=NAVY)
     c.showPage()
 
     p = PageWriter(c, "Quanex credit committee memorandum", 3, total)
@@ -408,7 +415,7 @@ def build_memo(root: Path, metrics: dict[tuple[str, str], dict[str, str]], chart
 
     p = PageWriter(c, "Quanex credit committee memorandum", 7, total)
     p.section("7. Downside and covenant intervention")
-    p.table(["Selected path", "Max leverage / min coverage", "Liquidity and event", "Maturity gap"], [
+    p.table(["Selected path", "Maximum quarterly-test leverage / min coverage", "Liquidity and event", "Maturity gap"], [
         ["Base", "3.23x / 5.39x", "$263.902m all-in; no modeled breach/failure", "$324.780m"],
         ["Moderate unmitigated", "4.4893x / 3.2104x", "$165.078m; breach 10/31/2026; no failure", "$408.375m"],
         ["Moderate mitigated", "4.4670x / 3.2168x", "$168.937m; breach 10/31/2026; no failure", "$381.133m"],
@@ -419,8 +426,8 @@ def build_memo(root: Path, metrics: dict[tuple[str, str], dict[str, str]], chart
     p.paragraph("Moderate unmitigated/mitigated leverage peaks at 4.4893x/4.4670x; coverage bottoms at 3.2104x/3.2168x. Both warn and breach 10/31/2026. Liquidity remains $165.078m/$168.937m; neither modeled path exhausts liquidity or fails payment. Mitigation does not restore compliance; no automatic waiver is assumed. At the severe first-payment-failure date, illustrative recovery methods remain alternatives and official recovery is N/D. Recovery does not improve the Elevated project-specific assessment.", size=8.2)
     p.heading("9. Conditions, monitoring, and conclusion")
     p.paragraph("Conditions precedent address the $15m source, funds flow, closing coverage, final definitions/economics, guarantees, collateral, accessible cash, LCs, projections, legal/KYC/tax/authority, and full commitments. Ongoing protections address distributions, minimum liquidity, certificates, monthly operating/cash reporting, control remediation, and maturity planning. Analyst warnings remain distinct from legal breaches.", size=8.1)
-    p.callout("CONCLUSION - CONDITIONAL APPROVAL",
-              "Owner-review status: owner_reviewed. Early moderate breach is accepted only as intervention while liquidity/payment capacity remain. If diligence indicates moderate is near expected, resize, require non-debt capital, restructure, or do not close. Failed conditions cannot be replaced with debt or covenant relief; retain or amend existing facilities through a limited amendment/extension. No funding authority is granted.", PALE_BLUE, 73)
+    p.callout("CONDITIONAL APPROVAL - PROCEED WITH DILIGENCE AND DEFINITIVE DOCUMENTATION",
+              f"Owner-review status: owner_reviewed. {NO_FINAL_AUTHORIZATION} Early moderate breach is accepted only as intervention while liquidity/payment capacity remain. If diligence indicates moderate is near expected, resize, require non-debt capital, restructure, or do not close. Failed conditions cannot be replaced with debt or covenant relief; retain or amend existing facilities through a limited amendment/extension.", PALE_BLUE, 82)
     c.showPage()
 
     p = PageWriter(c, "Quanex credit committee memorandum", 8, total, appendix=True)
@@ -453,7 +460,7 @@ def build_memo(root: Path, metrics: dict[tuple[str, str], dict[str, str]], chart
 
     p = PageWriter(c, "Quanex credit committee memorandum", 9, total, appendix=True)
     p.section("Appendix B - Scenario and covenant matrix")
-    p.table(["Path", "Max leverage", "Min coverage", "All-in liquidity", "First warning", "First breach", "First payment failure", "Maturity gap"], [
+    p.table(["Path", "Maximum quarterly-test leverage", "Min coverage", "All-in liquidity", "First warning", "First breach", "First payment failure", "Maturity gap"], [
         ["Base", "3.23x", "5.39x", "$263.902m", "None", "None", "None", "$324.780m"],
         ["Moderate U", "4.49x", "3.21x", "$165.078m", "10/31/26", "10/31/26", "None", "$408.375m"],
         ["Moderate M", "4.47x", "3.22x", "$168.937m", "10/31/26", "10/31/26", "None", "$381.133m"],
@@ -546,16 +553,18 @@ def build_brief(root: Path, metrics: dict[tuple[str, str], dict[str, str]]) -> P
     c.drawRightString(width - 32, height - 24, "Committee / information cutoff: December 15, 2025")
     c.drawRightString(width - 32, height - 38, "Hypothetical closing: January 31, 2026")
     c.setFillColor(PALE_BLUE)
-    c.roundRect(32, height - 117, width - 64, 47, 4, fill=1, stroke=0)
+    c.roundRect(32, height - 125, width - 64, 55, 4, fill=1, stroke=0)
     c.setFillColor(NAVY)
     c.setFont("Helvetica-Bold", 11)
-    c.drawString(43, height - 89, "PROJECT RECOMMENDATION: CONDITIONAL APPROVAL")
-    c.setFont("Helvetica", 8.5)
-    c.drawString(43, height - 105, "$635m term + $300m revolver | $29.898m opening draw | Hold <= $50m | owner_reviewed | Conditional Approval")
+    c.drawString(43, height - 88, "CONDITIONAL APPROVAL - PROCEED WITH DILIGENCE AND DEFINITIVE DOCUMENTATION")
+    c.setFont("Helvetica", 8)
+    c.drawString(43, height - 103, "$635m term + $300m revolver | $29.898m opening draw | Hold <= $50m | owner_reviewed")
+    c.setFont("Helvetica-Bold", 7.4)
+    c.drawString(43, height - 116, NO_FINAL_AUTHORIZATION)
 
     left_x, right_x = 32, 410
     col_w = 350
-    top = height - 139
+    top = height - 144
     c.setFillColor(BLUE)
     c.rect(left_x, top - 19, col_w, 19, fill=1, stroke=0)
     c.rect(right_x, top - 19, col_w, 19, fill=1, stroke=0)
@@ -600,7 +609,7 @@ def build_brief(root: Path, metrics: dict[tuple[str, str], dict[str, str]]) -> P
         (224, "Decisive risks / downside", PALE_RED, [
             "Opening leverage is close to the 3.25x warning.",
             "Tyman, margin, working capital, capex, and control execution.",
-            "Moderate U/M breach 10/31/26; 4.4893x/4.4670x leverage.",
+            "Moderate U/M breach 10/31/26; 4.4893x/4.4670x maximum quarterly-test leverage.",
             "U/M liquidity $165.078m/$168.937m; no payment failure; mitigation does not cure; no waiver.",
             "01/31/31 gaps: moderate U $408.375m; severe U $604.258m.",
         ]),
@@ -634,10 +643,10 @@ def build_brief(root: Path, metrics: dict[tuple[str, str], dict[str, str]]) -> P
     c.setFillColor(NAVY)
     c.setFont("Helvetica-Bold", 8.2)
     c.drawString(32, 94, "Strongest counterargument")
-    draw_wrapped(c, "At 07/31/2029, selected total funded debt is $19.4m above existing. Quanex could avoid fees and near-term debt expansion by retaining/amending. The lower selected 01/31/2031 gap partly reflects about 18 extra months. Conditional approval accepts moderate breach only as early intervention while liquidity/payment capacity remain, with reporting, corrective action, and no automatic waiver.", 32, 81, width - 64, 7.4, 9)
+    draw_wrapped(c, "Refinancing incurs fees and unresolved economics. At 07/31/2029, selected debt is $19.385m above existing. Moderate stress breaches 10/31/2026; refinancing remains unresolved; and the lower selected 01/31/2031 gap partly reflects about 18 extra months. Conditional approval accepts breach only as early intervention, with reporting, corrective action, and no automatic waiver.", 32, 81, width - 64, 7.4, 9)
     c.setFillColor(TEXT)
     c.setFont("Helvetica", 6.8)
-    c.drawString(32, 31, "Public-information hypothetical project recommendation; not actual bank approval, not a lender commitment, funding authorization, official grade, legal opinion, appraisal, or official recovery estimate.")
+    c.drawString(32, 31, "Public-information hypothetical project recommendation; no final commitment or funding authorization until all material conditions are satisfied; not an official grade, legal opinion, appraisal, or recovery estimate.")
     c.drawRightString(width - 32, 31, "Page 1 of 1")
     c.save()
     return path
@@ -668,9 +677,9 @@ def inspect(root: Path) -> dict[str, object]:
         "credit_memo_appendix_pages": len(memo.pages) - 7,
         "committee_brief_pages": len(brief.pages),
         "memo_required_sections": all(text in memo_text for text in required),
-        "memo_status": STATUS in memo_text,
-        "brief_status": STATUS in brief_text,
-        "brief_disclaimer": "not a lender commitment" in brief_text.lower() and "official recovery estimate" in brief_text.lower(),
+        "memo_status": "conditional approval" in memo_text.lower() and "owner_reviewed" in memo_text and NO_FINAL_AUTHORIZATION in memo_text,
+        "brief_status": "conditional approval" in brief_text.lower() and "owner_reviewed" in brief_text and NO_FINAL_AUTHORIZATION in brief_text,
+        "brief_disclaimer": NO_FINAL_AUTHORIZATION in brief_text and "recovery estimate" in brief_text.lower(),
         "cutoff_present": "December 15, 2025" in memo_text and "December 15, 2025" in brief_text,
         "closing_present": "January 31, 2026" in memo_text and "January 31, 2026" in brief_text,
     }

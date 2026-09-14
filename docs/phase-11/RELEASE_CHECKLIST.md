@@ -4,12 +4,20 @@
 
 - [x] Approved Phase 10 lineage and artifact anchors recorded.
 - [x] Network-free local-clone reproduction implemented.
+- [x] Disposable clone applies repository-local `core.autocrlf=false` before initial checkout; global and system Git configuration remain untouched.
+- [x] Canonical Phase 3 checkout bytes, independent Git metadata, no-hardlinks behavior, fixed 62-path overlay, and temporary-workspace cleanup are regression tested.
 - [x] Exact comparison required for deterministic text, data, chart, and PDF outputs.
 - [x] Normalized semantic comparison required for the workbook.
 - [x] Excel, LibreOffice, and PDF checks use disposable copies or paths.
 - [x] README links, artifact existence, hashes, page counts, and workbook structure are controlled.
 - [x] Credential, local-path, residue, cutoff, source-lineage, whitespace, and repository-attribute checks are implemented.
 - [x] Phase 12 implementation is excluded.
+- [x] Same-date opening-debt comparison and separate October historical reference verified.
+- [x] Every displayed feasible term-sizing case balances from Phase 7 source pairings.
+- [x] Amortization sensitivity reruns integrated cash, debt, revolver, interest, sweep, liquidity, covenant, and maturity mechanics.
+- [x] Incomplete LTM periods remain `N/D`; complete nonpositive periods remain `N/M`.
+- [x] Dynamic spreadsheet checks require separately identifiable executed evidence.
+- [x] Independent economic-semantic invariant tests pass.
 
 ## Licensing and redistribution
 
@@ -24,3 +32,4 @@ A practical owner decision is to license original code separately from narrative
 - [ ] Confirm public repository visibility and redistribution comfort.
 - [ ] Review Phase 11 reproducibility and release-QA results.
 - [ ] Preserve Conditional Approval, all open conditions, and the mandatory fallback.
+- [ ] Confirm that no final commitment or funding authorization exists until every material condition is satisfied.

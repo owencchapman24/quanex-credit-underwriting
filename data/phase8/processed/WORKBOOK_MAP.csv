@@ -4,12 +4,12 @@ sheet_order,sheet_name,purpose,primary_range,treatment
 3,Scenario Comparison,live case and captured comparisons,C2:AE21,formulas plus engine-captured values and stale flags
 4,Historicals,FY2021-FY2025 actuals,C2:T58,imported reported/calculated values with source IDs
 5,Credit Adjustments,earnings layers and 11 decisions,C2:AB33,imported decisions and formula bridges
-6,Transaction,"sources, uses and alternatives",C2:P34,native formulas
+6,Transaction,"sources, uses and same-date alternatives",C2:P44,historical October reference separated from projected January alternatives; native formulas
 7,Forecast,quarterly operating and cash forecast,C2:W29,native selected-scenario formulas
 8,Debt Schedule,24 monthly plus 12 quarterly periods,C2:AD48,native roll-forward and sensitivity formulas
 9,Liquidity,"cash, availability and failure states",C2:AI48,native formulas linked to debt schedule
 10,Covenants,quarterly covenant calculations,C2:AR29,native formulas and exact status logic
 11,Recovery,Phase 9 pending state,C2:F15,no recovery calculations
-12,Sensitivities,"term, EBITDA, rate, WC and maturity",C2:N22,explicit native formulas
+12,Sensitivities,balanced term pairings plus integrated amortization,C2:Q30,approved Phase 7 pairings and independently generated integrated paths
 13,Sources,source and assumption register,A1:M80,approved imported lineage
 14,Checks,terminal audit controls,C2:H38,independent formulas; no outbound dependencies

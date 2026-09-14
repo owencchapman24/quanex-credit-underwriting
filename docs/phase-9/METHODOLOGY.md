@@ -6,4 +6,4 @@ Going-concern and asset-realization sensitivities are alternative methods and ar
 
 The owner reviewed all 16 Phase 9 decisions. Their underlying values remain illustrative assumptions or `N/D` conclusions rather than facts, appraisals, borrowing-base determinations or legal conclusions. The provisional borrower grade is `Elevated`, uses only the approved five-grade project scale and is not a bank or agency rating. Monitoring maps every Phase 3 driver to at least one specific trigger and action. No Phase 10 recommendation is made.
 
-Workbook lineage is explicit. The original Phase 8 normalized fingerprint was `12589f4c34975118fad1aea3ddb83de8f67b4521f33307104ef1bd42efb07dd7`; the corrected Excel-compatible Phase 8 fingerprint was `7dae55edc1d7fbb7ae15c04ff8173a5e610e75c31f4a6c75ad2c72e4eb078635`. Phase 9 is generated from that corrected baseline.
+Workbook lineage is explicit. The original Phase 8 normalized fingerprint was `12589f4c34975118fad1aea3ddb83de8f67b4521f33307104ef1bd42efb07dd7`; the corrected Excel-compatible Phase 8 fingerprint was `3f66a86542015ee20dc9812b99f00cfbcc84b8a56e78173247e5a5a77a7922dd`. Phase 9 is generated from that corrected baseline.

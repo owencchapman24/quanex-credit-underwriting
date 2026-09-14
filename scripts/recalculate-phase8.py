@@ -28,6 +28,9 @@ SCENARIOS = (
 )
 SOFFICE = Path(r"C:\Program Files\LibreOffice\program\soffice.exe")
 ENGINE = "LibreOffice 26.8.0.3"
+# Stable technical-generation label for the bounded post-Phase 11 remediation.
+# It is not borrower evidence and prevents repeated builds from changing CSVs.
+CAPTURED_AT = "2026-09-13T00:00:00Z"
 
 
 def prop(name: str, value: object) -> PropertyValue:
@@ -104,7 +107,7 @@ def set_cell(document, sheet: str, address: str, value: object) -> None:
 
 
 def configure_print(document) -> None:
-    landscape = {"Forecast", "Debt Schedule", "Liquidity", "Covenants", "Scenario Comparison", "Historicals", "Credit Adjustments", "Sources"}
+    landscape = {"Forecast", "Debt Schedule", "Liquidity", "Covenants", "Scenario Comparison", "Historicals", "Credit Adjustments", "Transaction", "Sensitivities", "Sources"}
     repeated_rows = {
         "Assumptions": (40, 40), "Scenario Comparison": (11, 11), "Historicals": (6, 6),
         "Credit Adjustments": (19, 19), "Forecast": (7, 8), "Debt Schedule": (7, 11),
@@ -116,7 +119,9 @@ def configure_print(document) -> None:
         sheet.setPrintAreas((cursor.RangeAddress,))
         style = document.StyleFamilies.getByName("PageStyles").getByName(sheet.PageStyle)
         style.IsLandscape = sheet.Name in landscape
-        style.ScaleToPagesX = 1
+        # The covenant matrix is intentionally wide; two landscape pages keep
+        # decision-facing text legible instead of shrinking 30 fields to one.
+        style.ScaleToPagesX = 2 if sheet.Name == "Covenants" else 1
         style.ScaleToPagesY = 0
         style.LeftMargin = 900
         style.RightMargin = 900
@@ -131,7 +136,7 @@ def configure_print(document) -> None:
 
 def capture(document) -> list[dict[str, object]]:
     captures: list[dict[str, object]] = []
-    captured_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    captured_at = CAPTURED_AT
     version = str(cell_value(document, "Assumptions", "D6"))
     source_hash = str(cell_value(document, "Assumptions", "D8"))
     for index, (scenario_name, scenario_id) in enumerate(SCENARIOS, start=12):
@@ -180,9 +185,9 @@ def parity(document) -> dict[str, object]:
         "moderate_mitigated_maturity_gap": cell_value(document, "Scenario Comparison", "X14"),
         "severe_unmitigated_maturity_gap": cell_value(document, "Scenario Comparison", "X15"),
         "severe_mitigated_maturity_gap": cell_value(document, "Scenario Comparison", "X16"),
-        "existing_common_horizon_debt": cell_value(document, "Transaction", "E22"),
-        "existing_maturity_gap": cell_value(document, "Transaction", "F22"),
-        "reference_maturity_gap": cell_value(document, "Transaction", "F24"),
+        "existing_common_horizon_debt": cell_value(document, "Transaction", "D34"),
+        "existing_maturity_gap": cell_value(document, "Transaction", "G34"),
+        "reference_maturity_gap": cell_value(document, "Transaction", "G36"),
         "sources_uses_difference": cell_value(document, "Transaction", "D12"),
         "closing_coverage": cell_value(document, "Credit Summary", "D26"),
     }
@@ -208,6 +213,25 @@ def dynamic_tests(document) -> dict[str, object]:
     document.calculateAll()
     baseline = tuple(cell_value(document, "Scenario Comparison", address) for address in ("F5", "I5", "J5", "L5", "P5", "Q5", "X5"))
     historical = document.Sheets.getByName("Historicals").getCellRangeByName("C7:N50").getDataArray()
+    for row, label in ((9, "April 2026"), (10, "July 2026")):
+        observed = tuple(cell_value(document, "Covenants", f"{column}{row}") for column in ("G", "I", "L", "V", "X"))
+        add(
+            f"incomplete {label} LTM is N/D",
+            observed[:4] == ("N/D", "N/D", "N/D", "N/D") and observed[4] == "INCOMPLETE",
+            observed,
+        )
+    first_complete_leverage = tuple(cell_value(document, "Covenants", address) for address in ("G11", "I11", "L11"))
+    add(
+        "first complete EBITDA LTM calculates",
+        isinstance(first_complete_leverage[0], float) and first_complete_leverage[1] not in {"N/D", "N/M"} and first_complete_leverage[2] in {"COMPLIANT", "WARNING", "BREACH"},
+        first_complete_leverage,
+    )
+    first_complete_all = tuple(cell_value(document, "Covenants", address) for address in ("I12", "O12", "V12", "X12"))
+    add(
+        "first fully complete leverage and coverage test calculates",
+        all(value not in {"N/D", "N/M"} for value in first_complete_all[:3]) and first_complete_all[3] == "COMPLETE",
+        first_complete_all,
+    )
 
     set_cell(document, "Assumptions", "D4", "Moderate unmitigated"); document.calculateAll()
     moderate = cell_value(document, "Scenario Comparison", "F5")
@@ -246,17 +270,20 @@ def dynamic_tests(document) -> dict[str, object]:
     opening_debt = float(cell_value(document, "Transaction", "D17"))
     exact_adjustment = opening_debt / (3.5 * 225.344) - 1
     set_cell(document, "Assumptions", "D21", exact_adjustment); document.calculateAll()
-    add("exact leverage boundary is not breach", cell_value(document, "Covenants", "V8") != "BREACH", cell_value(document, "Covenants", "V8"))
+    add("exact leverage boundary is not breach", cell_value(document, "Covenants", "L8") != "BREACH", cell_value(document, "Covenants", "L8"))
     set_cell(document, "Assumptions", "D21", exact_adjustment - 0.0001); document.calculateAll()
-    add("above leverage boundary breaches", cell_value(document, "Covenants", "V8") == "BREACH", cell_value(document, "Covenants", "V8"))
+    add("above leverage boundary breaches", cell_value(document, "Covenants", "L8") == "BREACH", cell_value(document, "Covenants", "L8"))
     set_cell(document, "Assumptions", "D21", -1); document.calculateAll()
-    add("zero EBITDA is N/M", cell_value(document, "Covenants", "I8") == "N/M", cell_value(document, "Covenants", "I8"))
+    zero_complete = tuple(cell_value(document, "Covenants", address) for address in ("I12", "O12", "V12", "X12"))
+    add("zero EBITDA with complete inputs is N/M", zero_complete == ("N/M", "N/M", "N/M", "COMPLETE"), zero_complete)
     set_cell(document, "Assumptions", "D21", -2); document.calculateAll()
-    add("negative EBITDA is N/M", cell_value(document, "Covenants", "I8") == "N/M", cell_value(document, "Covenants", "I8"))
+    negative_complete = tuple(cell_value(document, "Covenants", address) for address in ("I12", "O12", "V12", "X12"))
+    add("negative EBITDA with complete inputs is N/M", negative_complete == ("N/M", "N/M", "N/M", "COMPLETE"), negative_complete)
     set_cell(document, "Assumptions", "D21", 0)
 
     base_rate = float(cell_value(document, "Assumptions", "D19")); set_cell(document, "Assumptions", "D19", ""); document.calculateAll()
-    add("missing cash interest is N/D", cell_value(document, "Covenants", "O12") == "N/D", cell_value(document, "Covenants", "O12"))
+    missing_interest = tuple(cell_value(document, "Covenants", address) for address in ("O12", "R12", "V12", "X12"))
+    add("missing cash interest is N/D", missing_interest == ("N/D", "N/D", "N/D", "INCOMPLETE"), missing_interest)
     set_cell(document, "Assumptions", "D19", 0); document.calculateAll()
     add("zero cash interest is N/M", cell_value(document, "Covenants", "O12") == "N/M", cell_value(document, "Covenants", "O12"))
     set_cell(document, "Assumptions", "D19", -0.01); document.calculateAll()

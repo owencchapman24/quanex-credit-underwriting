@@ -28,15 +28,26 @@ DOCS = ROOT / "docs" / "phase-11"
 MODEL = ROOT / "model" / "Quanex_Credit_Underwriting.xlsx"
 MEMO = ROOT / "reports" / "credit_memo.pdf"
 BRIEF = ROOT / "reports" / "committee_brief.pdf"
-APPROVED_PHASE10_COMMIT = "9fca23a949d1f8d8dee6f37906cb086ec6cda994"
-APPROVED_PHASE10_PARENT = "fe00c19ab717900fe5c7484d8f57975c83483cba"
-APPROVED_WORKBOOK_SHA = "95f3bf3f9943bc6642543047ca0cc06aafc0242a065900ddf0291727afdf380d"
-APPROVED_WORKBOOK_SIZE = 282_046
-APPROVED_WORKBOOK_FINGERPRINT = "49c2dac4c4045f68200cd85c1c3b6a76acc6b7c219c4bef04c32c7846b20d42c"
-APPROVED_MEMO_SHA = "90320bae31b8c4e26295eaee8be13b738c979281b6c41ded640fd209a9f29c47"
-APPROVED_BRIEF_SHA = "4fd9860ce00338129fbc43a1d7de010bc6ffe5cf506e2b4791802672aa0afcf9"
+APPROVED_PHASE10_COMMIT = "ce656ebfca67f2bd34a78273f72367e39c0c2037"
+APPROVED_PHASE10_PARENT = "9fca23a949d1f8d8dee6f37906cb086ec6cda994"
+APPROVED_WORKBOOK_SHA = "a1fdd2604468e8b795f2bd4330fe78821b66570fd4d728313b98963b01f671d4"
+APPROVED_WORKBOOK_SIZE = 286_530
+APPROVED_WORKBOOK_FINGERPRINT = "cf536570671a6baf2a7b019d46444cb839bb906943af8f0f22929772c04303ec"
+EXPECTED_FORMULA_COUNT = 2897
+APPROVED_MEMO_SHA = "9f0b8deb55ccd46729b2a03c97fc0aee63faa31e6ff73702296bda0417629198"
+APPROVED_BRIEF_SHA = "f4452cb1c22272158d5720b259eaa8669bf234467b1cc671b5fda72c2547a801"
 INFORMATION_CUTOFF = "2025-12-15"
 RELEASE_STATUS = "GO_TO_OWNER_REVIEW"
+GIT_WINDOWS_TEXT_ENV = {
+    "GIT_CONFIG_COUNT": "1",
+    "GIT_CONFIG_KEY_0": "core.autocrlf",
+    "GIT_CONFIG_VALUE_0": "true",
+}
+GIT_CANONICAL_TEXT_ENV = {
+    "GIT_CONFIG_COUNT": "1",
+    "GIT_CONFIG_KEY_0": "core.autocrlf",
+    "GIT_CONFIG_VALUE_0": "false",
+}
 APPROVED_AI_DISCLOSURE = """## AI use and analytical ownership
 
 I directed this project and retained responsibility for its underwriting conclusions. I approved the credit question and scope, reviewed the supporting evidence and reconciliations, determined the treatment of EBITDA adjustments, selected the scenario assumptions, evaluated accessible cash, sized the proposed facilities, designed the covenant package, assessed recovery limitations, and made the final recommendation. I also tested key workbook behavior in Microsoft Excel and reviewed the completed model, credit memo, committee brief, and validation results.
@@ -81,9 +92,14 @@ def write_csv(path: Path, rows: list[dict[str, object]], fields: list[str] | Non
         writer.writerows(rows)
 
 
-def run(command: list[str], *, cwd: Path = ROOT, timeout: int = 1800) -> str:
+def run(
+    command: list[str], *, cwd: Path = ROOT, timeout: int = 1800,
+    extra_env: dict[str, str] | None = None,
+) -> str:
     env = dict(os.environ)
     env["PYTHONDONTWRITEBYTECODE"] = "1"
+    if extra_env:
+        env.update(extra_env)
     result = subprocess.run(command, cwd=cwd, text=True, capture_output=True, env=env, timeout=timeout)
     if result.returncode:
         status = ""
@@ -225,7 +241,91 @@ ARTIFACTS: tuple[tuple[str, str, str, str, str, str], ...] = (
     ("P11A-023", "docs/phase-11/RELEASE_CHECKLIST.md", "technical, licensing, and owner-review checklist", "Phase 11", "maintained source", "required"),
     ("P11A-024", "docs/phase-11/PHASE12_HANDOFF.md", "bounded next-phase handoff", "Phase 11", "maintained source", "required"),
     ("P11A-025", "data/phase11/raw/OWNER_REVIEW_DECISIONS.csv", "Phase 11 owner-review decision record", "Phase 11", "maintained source", "required"),
+    ("P11A-026", "data/phase8/processed/OPENING_DEBT_COMPARISON.csv", "date-consistent opening-debt comparison", "audit remediation", "python -B scripts/phase8.py all", "required"),
+    ("P11A-027", "data/phase8/processed/TERM_SIZING_SENSITIVITY.csv", "balanced Phase 7 sizing pairings", "audit remediation", "python -B scripts/phase8.py all", "required"),
+    ("P11A-028", "data/phase8/processed/AMORTIZATION_SENSITIVITY_RESULTS.csv", "integrated amortization sensitivity", "audit remediation", "python -B scripts/phase8.py all", "required"),
+    ("P11A-029", "data/phase8/processed/DYNAMIC_TEST_EVIDENCE.csv", "separately identifiable Phase 8 dynamic-test evidence", "audit remediation", "python -B scripts/phase8.py all", "required"),
+    ("P11A-030", "data/phase9/processed/DYNAMIC_RECOVERY_TEST_EVIDENCE.csv", "separately identifiable Phase 9 dynamic-test evidence", "audit remediation", "python -B scripts/phase9.py all", "required"),
 )
+
+# Exact bounded inventory permitted by the post-Phase 11 audit-remediation pass.
+# This replaces the former blanket "prior phases unchanged" rule without opening
+# a prefix-based exception for unrelated analytical changes.
+REMEDIATION_ALLOWED_PATHS = frozenset({
+    "README.md",
+    "data/phase10/processed/COMMITTEE_METRICS.csv",
+    "data/phase10/processed/CONDITIONS_AND_MONITORING.csv",
+    "data/phase10/processed/DECISION_REGISTER.csv",
+    "data/phase10/processed/DELIVERABLE_CONSISTENCY_RESULTS.csv",
+    "data/phase10/processed/RISK_MITIGANT_MATRIX.csv",
+    "data/phase10/processed/VALIDATION_RESULTS.csv",
+    "data/phase10/processed/WORKBOOK_INPUTS.json",
+    "data/phase10/raw/OWNER_REVIEW_DECISIONS.csv",
+    "data/phase10/raw/STARTING_CHECKPOINT.csv",
+    "data/phase11/processed/ARTIFACT_MANIFEST.csv",
+    "data/phase11/processed/REPRODUCIBILITY_RESULTS.csv",
+    "data/phase11/processed/VALIDATION_RESULTS.csv",
+    "data/phase11/raw/STARTING_CHECKPOINT.csv",
+    "data/phase8/processed/AMORTIZATION_SENSITIVITY_RESULTS.csv",
+    "data/phase8/processed/DYNAMIC_TEST_EVIDENCE.csv",
+    "data/phase8/processed/OPENING_DEBT_COMPARISON.csv",
+    "data/phase8/processed/SCENARIO_CAPTURE_RESULTS.csv",
+    "data/phase8/processed/TERM_SIZING_SENSITIVITY.csv",
+    "data/phase8/processed/WORKBOOK_MAP.csv",
+    "data/phase8/processed/WORKBOOK_VALIDATION_RESULTS.csv",
+    "data/phase8/raw/STARTING_CHECKPOINT.csv",
+    "data/phase9/processed/DYNAMIC_RECOVERY_TEST_EVIDENCE.csv",
+    "data/phase9/processed/VALIDATION_RESULTS.csv",
+    "data/phase9/raw/STARTING_CHECKPOINT.csv",
+    "docs/phase-10/DECISION_RATIONALE.md",
+    "docs/phase-10/METHODOLOGY.md",
+    "docs/phase-10/PHASE11_HANDOFF.md",
+    "docs/phase-10/SOURCE_LEDGER.csv",
+    "docs/phase-11/LIMITATIONS.md",
+    "docs/phase-11/METHODOLOGY.md",
+    "docs/phase-11/PHASE12_HANDOFF.md",
+    "docs/phase-11/RELEASE_CHECKLIST.md",
+    "docs/phase-11/REPRODUCIBILITY.md",
+    "docs/phase-11/SOURCE_LEDGER.csv",
+    "docs/phase-7/COVENANT_DESIGN.md",
+    "docs/phase-8/CALCULATION_VALIDATION.md",
+    "docs/phase-8/METHODOLOGY.md",
+    "docs/phase-8/SOURCE_LEDGER.csv",
+    "docs/phase-9/METHODOLOGY.md",
+    "model/Quanex_Credit_Underwriting.xlsx",
+    "reports/committee_brief.md",
+    "reports/committee_brief.pdf",
+    "reports/credit_memo.md",
+    "reports/credit_memo.pdf",
+    "scripts/build-phase10.mjs",
+    "scripts/build-phase8.mjs",
+    "scripts/phase10.py",
+    "scripts/phase11.py",
+    "scripts/phase4.py",
+    "scripts/phase5.py",
+    "scripts/phase6.py",
+    "scripts/phase7.py",
+    "scripts/phase8.py",
+    "scripts/phase9.py",
+    "scripts/recalculate-phase8.py",
+    "scripts/render-phase10.py",
+    "tests/test_audit_remediation.py",
+    "tests/test_phase10.py",
+    "tests/test_phase11.py",
+    "tests/test_phase8.py",
+    "tests/test_phase9.py",
+})
+
+PHASE3_PRESERVED_PATHS = (
+    "data/phase3/processed/ASSUMPTION_CANDIDATES.csv",
+    "data/phase3/processed/INFORMATION_GAPS.csv",
+    "data/phase3/processed/MITIGATION_REGISTER.csv",
+    "data/phase3/processed/QUARTERLY_SEGMENT_TRENDS.csv",
+    "data/phase3/processed/RISK_DRIVER_MAP.csv",
+    "data/phase3/processed/SCENARIO_DRIVER_CANDIDATES.csv",
+    "docs/phase-3/SOURCE_LEDGER.csv",
+)
+REPRESENTATIVE_LF_CSV = PHASE3_PRESERVED_PATHS[0]
 
 
 def artifact_rows(reproduced: bool) -> list[dict[str, str | int]]:
@@ -264,11 +364,19 @@ def source_ledger_rows() -> list[dict[str, str]]:
         ("data/phase10/processed/COMMITTEE_METRICS.csv", "approved Phase 10 artifact", "approved_output", INFORMATION_CUTOFF, "within_cutoff"),
         ("data/phase10/processed/DELIVERABLE_CONSISTENCY_RESULTS.csv", "approved Phase 10 artifact", "approved_output", INFORMATION_CUTOFF, "within_cutoff"),
         ("data/phase10/processed/VALIDATION_RESULTS.csv", "approved Phase 10 artifact", "approved_output", INFORMATION_CUTOFF, "within_cutoff"),
+        ("data/phase8/processed/OPENING_DEBT_COMPARISON.csv", "audit-remediated analytical control", "approved_calculation", INFORMATION_CUTOFF, "within_cutoff"),
+        ("data/phase8/processed/TERM_SIZING_SENSITIVITY.csv", "audit-remediated analytical control", "approved_calculation", INFORMATION_CUTOFF, "within_cutoff"),
+        ("data/phase8/processed/AMORTIZATION_SENSITIVITY_RESULTS.csv", "audit-remediated analytical control", "approved_calculation", INFORMATION_CUTOFF, "within_cutoff"),
+        ("data/phase8/processed/DYNAMIC_TEST_EVIDENCE.csv", "technical validation evidence", "repository_control", "not_analytical", "not_applicable"),
+        ("data/phase9/processed/DYNAMIC_RECOVERY_TEST_EVIDENCE.csv", "technical validation evidence", "repository_control", "not_analytical", "not_applicable"),
         ("model/Quanex_Credit_Underwriting.xlsx", "approved Phase 10 artifact", "approved_output", INFORMATION_CUTOFF, "within_cutoff"),
         ("reports/credit_memo.pdf", "approved Phase 10 artifact", "approved_output", INFORMATION_CUTOFF, "within_cutoff"),
         ("reports/committee_brief.pdf", "approved Phase 10 artifact", "approved_output", INFORMATION_CUTOFF, "within_cutoff"),
         ("README.md", "release-control input", "repository_control", "not_analytical", "not_applicable"),
         ("scripts/phase10.py", "release-control input", "repository_control", "not_analytical", "not_applicable"),
+        ("tests/test_phase10.py", "release-control regression input", "repository_control", "not_analytical", "not_applicable"),
+        ("scripts/phase11.py", "release-control implementation", "repository_control", "not_analytical", "not_applicable"),
+        ("tests/test_phase11.py", "release-control regression input", "repository_control", "not_analytical", "not_applicable"),
         (".gitattributes", "release-control input", "repository_control", "not_analytical", "not_applicable"),
         ("docs/phase-11/AI_USE_DISCLOSURE.md", "owner-reviewed disclosure", "owner_reviewed_governance", "not_analytical", "not_applicable"),
         ("data/phase11/raw/OWNER_REVIEW_DECISIONS.csv", "owner-review decision", "owner_reviewed_governance", "not_analytical", "not_applicable"),
@@ -310,8 +418,8 @@ BUILD_SEQUENCE = (
     ("phase5", [sys.executable, "-B", "scripts/phase5.py", "all"]),
     ("phase6", [sys.executable, "-B", "scripts/phase6.py", "all"]),
     ("phase7", [sys.executable, "-B", "scripts/phase7.py", "all"]),
-    ("phase8", [sys.executable, "-B", "scripts/phase8.py", "validate"]),
-    ("phase9", [sys.executable, "-B", "scripts/phase9.py", "validate"]),
+    ("phase8", [sys.executable, "-B", "scripts/phase8.py", "all"]),
+    ("phase9", [sys.executable, "-B", "scripts/phase9.py", "all"]),
     ("phase10_build", [sys.executable, "-B", "scripts/phase10.py", "all"]),
     ("phase10_validate", [sys.executable, "-B", "scripts/phase10.py", "validate"]),
 )
@@ -378,48 +486,219 @@ def reproduction_in_current_clone() -> dict[str, object]:
     }
 
 
-def _copy_current_tree_to_clone(destination: Path) -> None:
-    for relative in repository_paths(ROOT):
-        source = ROOT / relative
+def exact_path_hashes(root: Path, paths: tuple[str, ...] | list[str]) -> dict[str, str]:
+    """Hash exact file bytes; no newline or semantic normalization is allowed."""
+    return {relative: sha256(root / relative) for relative in paths}
+
+
+def exact_path_differences(baseline: dict[str, str], root: Path) -> list[str]:
+    """Return paths whose current raw bytes differ from the supplied hashes."""
+    return [
+        relative for relative in sorted(baseline)
+        if not (root / relative).is_file() or sha256(root / relative) != baseline[relative]
+    ]
+
+
+def require_exact_remediation_inventory(root: Path, paths: frozenset[str]) -> None:
+    """Reject missing or extra overlays rather than deriving exceptions from status."""
+    actual = frozenset(changed_paths(root))
+    if actual != paths:
+        missing = sorted(paths - actual)
+        unexpected = sorted(actual - paths)
+        raise Phase11Error(
+            "Disposable overlay inventory differs from the authoritative inventory; "
+            f"missing={missing}; unexpected={unexpected}"
+        )
+
+
+def _copy_current_tree_to_clone(
+    destination: Path,
+    *,
+    source_root: Path,
+    overlay_paths: frozenset[str],
+) -> None:
+    """Copy the fixed approved overlay byte-for-byte into the disposable clone."""
+    for relative in sorted(overlay_paths):
+        source = source_root / relative
+        if not source.is_file():
+            raise Phase11Error(f"Approved overlay path is not a file: {relative}")
         target = destination / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
+        if source.read_bytes() != target.read_bytes():
+            raise Phase11Error(f"Byte-exact overlay copy failed: {relative}")
 
 
-def isolated_clone() -> tuple[tempfile.TemporaryDirectory[str], Path]:
+def _verify_canonical_checkout(destination: Path) -> dict[str, str]:
+    """Prove checkout bytes equal canonical Git blobs before any live overlay."""
+    hashes: dict[str, str] = {}
+    for relative in PHASE3_PRESERVED_PATHS:
+        result = subprocess.run(
+            ["git", "show", f"HEAD:{relative}"], cwd=destination,
+            capture_output=True, check=True,
+        )
+        checkout = (destination / relative).read_bytes()
+        if checkout != result.stdout:
+            raise Phase11Error(f"Disposable checkout differs from canonical Git blob: {relative}")
+        if b"\r\n" in checkout:
+            raise Phase11Error(f"Disposable checkout is not canonical LF: {relative}")
+        hashes[relative] = hashlib.sha256(checkout).hexdigest()
+    return hashes
+
+
+def _materialize_approved_checkout_eols(
+    destination: Path,
+    *,
+    source_root: Path,
+    overlay_paths: frozenset[str],
+) -> list[str]:
+    """Match approved checkout EOLs using Git content, never a broad copy.
+
+    An unmodified tracked file may differ from its canonical blob only by the
+    exact LF-to-CRLF transform. Those files are rematerialized from Git with a
+    command-local setting. Any other difference outside the fixed overlay is a
+    failure. This is checkout preparation; later comparisons remain raw-byte
+    exact and no path becomes an analytical exception.
+    """
+    tracked_result = subprocess.run(
+        ["git", "ls-files", "-z"], cwd=destination,
+        capture_output=True, check=True,
+    )
+    tracked = sorted(
+        item.decode("utf-8") for item in tracked_result.stdout.split(b"\0") if item
+    )
+    windows_paths: list[str] = []
+    for relative in tracked:
+        if relative in overlay_paths:
+            continue
+        source = source_root / relative
+        target = destination / relative
+        if not source.is_file() or not target.is_file():
+            raise Phase11Error(f"Missing tracked checkout path: {relative}")
+        canonical = target.read_bytes()
+        approved = source.read_bytes()
+        if approved == canonical:
+            continue
+        if b"\r\n" not in canonical and approved == canonical.replace(b"\n", b"\r\n"):
+            windows_paths.append(relative)
+            continue
+        raise Phase11Error(f"Unapproved non-EOL checkout difference: {relative}")
+    if windows_paths:
+        for relative in windows_paths:
+            target = (destination / relative).resolve()
+            if destination.resolve() not in target.parents:
+                raise Phase11Error(f"Unsafe disposable text path: {relative}")
+            target.unlink()
+        run([
+            "git", "-c", "core.autocrlf=true", "checkout", "--force", "HEAD", "--",
+            *windows_paths,
+        ], cwd=destination)
+        mismatches = [
+            relative for relative in windows_paths
+            if (destination / relative).read_bytes() != (source_root / relative).read_bytes()
+        ]
+        if mismatches:
+            raise Phase11Error("Command-local EOL materialization mismatch: " + ", ".join(mismatches))
+    return windows_paths
+
+
+def isolated_clone(
+    *,
+    source_root: Path = ROOT,
+    expected_head: str = APPROVED_PHASE10_COMMIT,
+    overlay_paths: frozenset[str] = REMEDIATION_ALLOWED_PATHS,
+    require_authoritative_inventory: bool = True,
+    require_staged_overlay_exact: bool = True,
+) -> tuple[tempfile.TemporaryDirectory[str], Path]:
+    """Create a canonical-LF, independent clone and apply only a fixed overlay."""
+    if require_authoritative_inventory:
+        if overlay_paths != REMEDIATION_ALLOWED_PATHS:
+            raise Phase11Error("Production clone overlay is not the authoritative 62-path inventory")
+        require_exact_remediation_inventory(source_root, REMEDIATION_ALLOWED_PATHS)
     holder = tempfile.TemporaryDirectory(prefix="quanex-phase11-verify-")
     destination = Path(holder.name) / "repo"
-    run(["git", "clone", "--no-hardlinks", "--quiet", str(ROOT), str(destination)])
-    head = run(["git", "rev-parse", "HEAD"], cwd=destination)
-    if head != APPROVED_PHASE10_COMMIT:
+    try:
+        run([
+            "git", "clone", "--no-hardlinks", "--quiet", "--config", "core.autocrlf=false",
+            str(source_root), str(destination),
+        ], cwd=source_root, extra_env=GIT_CANONICAL_TEXT_ENV)
+        if not (destination / ".git").is_dir() or (destination / ".git").resolve() == (source_root / ".git").resolve():
+            raise Phase11Error("Disposable clone does not have independent Git metadata")
+        local_autocrlf = run(["git", "config", "--local", "--get", "core.autocrlf"], cwd=destination)
+        if local_autocrlf.lower() != "false":
+            raise Phase11Error(f"Disposable clone core.autocrlf is not false: {local_autocrlf}")
+        head = run(["git", "rev-parse", "HEAD"], cwd=destination)
+        if head != expected_head:
+            raise Phase11Error(f"Disposable clone began at unexpected commit: {head}")
+        _verify_canonical_checkout(destination)
+        _materialize_approved_checkout_eols(
+            destination, source_root=source_root, overlay_paths=overlay_paths,
+        )
+        if run(["git", "config", "--local", "--get", "core.autocrlf"], cwd=destination).lower() != "false":
+            raise Phase11Error("Command-local text materialization changed clone-local core.autocrlf")
+        _verify_canonical_checkout(destination)
+        if os.path.samefile(source_root / REPRESENTATIVE_LF_CSV, destination / REPRESENTATIVE_LF_CSV):
+            raise Phase11Error("Disposable clone uses a hardlink for the representative Phase 3 file")
+        _copy_current_tree_to_clone(
+            destination, source_root=source_root, overlay_paths=overlay_paths,
+        )
+        if overlay_paths:
+            run(["git", "config", "user.name", "Phase 11 Verification"], cwd=destination)
+            run(["git", "config", "user.email", "phase11-verification@invalid.local"], cwd=destination)
+            run(["git", "-c", "core.autocrlf=true", "add", "--", *sorted(overlay_paths)], cwd=destination)
+            staged = frozenset(
+                run(["git", "-c", "core.autocrlf=true", "diff", "--cached", "--name-only"], cwd=destination).splitlines()
+            )
+            if require_staged_overlay_exact and staged != overlay_paths:
+                raise Phase11Error("Disposable clone staged overlay differs from the fixed approved inventory")
+            if not require_staged_overlay_exact and not staged.issubset(overlay_paths):
+                raise Phase11Error("Disposable clone staged a path outside its fixed overlay")
+            if staged:
+                run(["git", "-c", "core.autocrlf=true", "commit", "--quiet", "-m", "temporary Phase 11 verification overlay"], cwd=destination)
+        if run(["git", "-c", "core.autocrlf=true", "status", "--porcelain=v1", "-uall"], cwd=destination):
+            raise Phase11Error("Disposable verification clone is not clean after overlay")
+    except Exception:
         holder.cleanup()
-        raise Phase11Error(f"Disposable clone did not begin at approved Phase 10: {head}")
-    _copy_current_tree_to_clone(destination)
-    run(["git", "config", "user.name", "Phase 11 Verification"], cwd=destination)
-    run(["git", "config", "user.email", "phase11-verification@invalid.local"], cwd=destination)
-    run(["git", "add", "-A"], cwd=destination)
-    run(["git", "commit", "--quiet", "-m", "temporary Phase 11 verification overlay"], cwd=destination)
-    if git_status(destination):
-        holder.cleanup()
-        raise Phase11Error("Disposable verification clone is not clean after overlay")
+        raise
     return holder, destination
 
 
 def run_clean_clone() -> dict[str, object]:
     holder, destination = isolated_clone()
     try:
-        output = run([sys.executable, "-B", "scripts/phase11.py", "reproduce"], cwd=destination)
+        clone_autocrlf = run(["git", "config", "--local", "--get", "core.autocrlf"], cwd=destination)
+        phase3_before = exact_path_hashes(destination, list(PHASE3_PRESERVED_PATHS))
+        independent_metadata = (destination / ".git").resolve() != (ROOT / ".git").resolve()
+        no_hardlinks = not os.path.samefile(ROOT / REPRESENTATIVE_LF_CSV, destination / REPRESENTATIVE_LF_CSV)
+        output = run(
+            [sys.executable, "-B", "scripts/phase11.py", "reproduce"],
+            cwd=destination, extra_env=GIT_WINDOWS_TEXT_ENV,
+        )
         result = json.loads(output.splitlines()[-1])
+        phase3_after = exact_path_hashes(destination, list(PHASE3_PRESERVED_PATHS))
+        if phase3_before != phase3_after:
+            raise Phase11Error("Phase 3 files changed during clean-clone reproduction")
     finally:
         holder.cleanup()
     result["clone_type"] = "disposable local no-hardlinks clone"
     result["cleanup"] = "PASS"
+    result["clone_local_autocrlf"] = clone_autocrlf
+    result["canonical_phase3_paths"] = len(phase3_before)
+    result["phase3_paths_unchanged"] = phase3_before == phase3_after
+    result["overlay_paths"] = len(REMEDIATION_ALLOWED_PATHS)
+    result["independent_git_metadata"] = independent_metadata
+    result["no_hardlinks"] = no_hardlinks
     return result
 
 
 def reproduction_rows(result: dict[str, object]) -> list[dict[str, str]]:
     pairs = [
         ("local clone began at approved Phase 10", "PASS", APPROVED_PHASE10_COMMIT, APPROVED_PHASE10_COMMIT),
+        ("disposable clone has independent Git metadata", "PASS" if result["independent_git_metadata"] else "FAIL", str(result["independent_git_metadata"]), "True"),
+        ("disposable clone uses no hardlinks", "PASS" if result["no_hardlinks"] else "FAIL", str(result["no_hardlinks"]), "True"),
+        ("core.autocrlf false before initial checkout", "PASS" if result["clone_local_autocrlf"] == "false" else "FAIL", str(result["clone_local_autocrlf"]), "false"),
+        ("canonical Phase 3 bytes preserved", "PASS" if result["phase3_paths_unchanged"] else "FAIL", str(result["canonical_phase3_paths"]), "7 exact paths unchanged"),
+        ("fixed remediation overlay", "PASS" if result["overlay_paths"] == 62 else "FAIL", str(result["overlay_paths"]), "62 explicit paths"),
         ("analytical reproduction required no network", "PASS" if result["network_analytical_requests"] == 0 else "FAIL", str(result["network_analytical_requests"]), "0"),
         ("deterministic artifacts exact", "PASS" if result["exact_differences"] == 0 else "FAIL", str(result["exact_differences"]), "0"),
         ("workbook normalized fingerprint", "PASS" if result["workbook_normalized_after"] == APPROVED_WORKBOOK_FINGERPRINT else "FAIL", str(result["workbook_normalized_after"]), APPROVED_WORKBOOK_FINGERPRINT),
@@ -498,6 +777,11 @@ def validation_rows() -> list[dict[str, object]]:
         ("common_horizon_total_funded_debt", "existing"): "495.3682812067100176549274129",
         ("common_horizon_total_funded_debt", "reference"): "507.9536592508711071826688285",
         ("common_horizon_total_funded_debt", "selected"): "514.753707786180339509466437",
+        ("opening_total_funded_debt", "existing_actual"): "703.869",
+        ("opening_total_funded_debt", "existing_projected"): "732.51671875",
+        ("opening_total_funded_debt", "reference_projected"): "742.51671875",
+        ("opening_total_funded_debt", "selected_projected"): "727.51671875",
+        ("selected_minus_existing_projected_closing_debt", "2026-01-31"): "-5.00000000",
     }
     for key, expected in anchors.items():
         add("anchors", f"{key[0]} {key[1]}", index.get(key) == expected, index.get(key), expected)
@@ -511,6 +795,8 @@ def validation_rows() -> list[dict[str, object]]:
     positions = [readme.find(h) for h in headings]
     add("README", "required section order", all(p >= 0 for p in positions) and positions == sorted(positions), positions, "ordered")
     add("README", "recommendation and fallback visible", "Conditional Approval" in readme and "retain or amend" in readme, "checked", "present")
+    add("README", "clarified owner wording and no funding authority", phase10.RECOMMENDATION_DISPLAY in readme and phase10.NO_FINAL_AUTHORIZATION in readme, "checked", "present")
+    add("README", "same-date projected closing comparison", all(token in readme for token in ("January 31, 2026", "$732.517m", "$727.517m", "$5.000m")), "checked", "present")
     add("README", "common-horizon warning visible", "July 31, 2029 common horizon" in readme and "not justified by faster" in readme, "checked", "present")
     add("README", "moderate breach visible", "October 31, 2026" in readme and "mitigation does not restore" in readme, "checked", "present")
     ai_heading = readme.find("## AI-use disclosure")
@@ -525,7 +811,7 @@ def validation_rows() -> list[dict[str, object]]:
     add("workbook", "approved raw SHA", workbook["sha256"] == APPROVED_WORKBOOK_SHA, workbook["sha256"], APPROVED_WORKBOOK_SHA)
     add("workbook", "approved size", workbook["size_bytes"] == APPROVED_WORKBOOK_SIZE, workbook["size_bytes"], APPROVED_WORKBOOK_SIZE)
     add("workbook", "approved normalized fingerprint", workbook["normalized_fingerprint"] == APPROVED_WORKBOOK_FINGERPRINT, workbook["normalized_fingerprint"], APPROVED_WORKBOOK_FINGERPRINT)
-    add("workbook", "approved structure", (workbook["sheet_count"], workbook["formula_count"], workbook["chart_count"]) == (14, 2902, 7), f"{workbook['sheet_count']}/{workbook['formula_count']}/{workbook['chart_count']}", "14/2902/7")
+    add("workbook", "approved structure", (workbook["sheet_count"], workbook["formula_count"], workbook["chart_count"]) == (14, EXPECTED_FORMULA_COUNT, 7), f"{workbook['sheet_count']}/{workbook['formula_count']}/{workbook['chart_count']}", f"14/{EXPECTED_FORMULA_COUNT}/7")
     add("workbook", "Base saved and no external links or formula errors", workbook["saved_scenario"] == "Base" and workbook["external_links"] == 0 and workbook["formula_errors"] == 0, f"{workbook['saved_scenario']}/{workbook['external_links']}/{workbook['formula_errors']}", "Base/0/0")
     pdfs = phase10.pdf_metadata()
     add("PDF", "credit memo approved", sha256(MEMO) == APPROVED_MEMO_SHA and pdfs["credit_memo_pages"] == 11, f"{sha256(MEMO)}/{pdfs['credit_memo_pages']}", f"{APPROVED_MEMO_SHA}/11")
@@ -567,14 +853,10 @@ def validation_rows() -> list[dict[str, object]]:
     add("repository", "no credentials", not credentials, ";".join(credentials), "none")
     phase12 = [p for p in repository_paths() if p.startswith(("data/phase12/", "docs/phase-12/")) or p in {"scripts/phase12.py", "tests/test_phase12.py"}]
     add("scope", "Phase 12 absent", not phase12, ";".join(phase12), "none")
-    allowed_exact = {"README.md", "scripts/phase11.py", "scripts/render-phase11.py", "tests/test_phase11.py", "scripts/phase10.py", "tests/test_phase10.py", "scripts/phase4.py", "scripts/phase5.py", "scripts/phase6.py", "scripts/phase7.py"}
-    unexpected = [p for p in changed_paths() if p not in allowed_exact and not p.startswith("data/phase11/") and not p.startswith("docs/phase-11/")]
-    add("scope", "working changes Phase 11 scoped", not unexpected, ";".join(unexpected), "none")
-    prior = subprocess.run(
-        ["git", "diff", "--name-only", "--", "data/phase1", "data/phase2", "data/phase3", "data/phase4", "data/phase5", "data/phase6", "data/phase7", "data/phase8", "data/phase9", "data/phase10", "docs/phase-0", "docs/phase-1", "docs/phase-2", "docs/phase-3", "docs/phase-4", "docs/phase-5", "docs/phase-6", "docs/phase-7", "docs/phase-8", "docs/phase-9", "docs/phase-10", "model", "reports"],
-        cwd=ROOT, text=True, capture_output=True, check=True,
-    ).stdout.strip()
-    add("scope", "Phase 0-10 analytical artifacts unchanged", prior == "", prior, "none")
+    changed = changed_paths()
+    unexpected = [p for p in changed if p not in REMEDIATION_ALLOWED_PATHS]
+    add("scope", "working changes stay within exact remediation inventory", not unexpected, ";".join(unexpected), "none")
+    add("scope", "no unbounded prior-phase exception", all(p in REMEDIATION_ALLOWED_PATHS for p in changed), len(changed), "all paths explicitly allowed")
     staged = subprocess.run(["git", "diff", "--cached", "--name-only"], cwd=ROOT, text=True, capture_output=True, check=True).stdout.strip()
     add("git", "nothing staged", staged == "", staged, "none")
     return controls
@@ -628,12 +910,13 @@ def verify_isolated() -> dict[str, object]:
     holder, destination = isolated_clone()
     clone_type = "disposable local no-hardlinks clone"
     try:
-        reproduction_output = run([sys.executable, "-B", "scripts/phase11.py", "reproduce"], cwd=destination)
+        reproduction_output = run([sys.executable, "-B", "scripts/phase11.py", "reproduce"], cwd=destination, extra_env=GIT_WINDOWS_TEXT_ENV)
         reproduction = json.loads(reproduction_output.splitlines()[-1])
-        validate_output = run([sys.executable, "-B", "scripts/phase11.py", "validate"], cwd=destination)
-        full = run([sys.executable, "-B", "-m", "unittest", "discover", "-s", "tests", "-v"], cwd=destination)
-        focused = run([sys.executable, "-B", "-m", "unittest", "-v", "tests.test_phase8", "tests.test_phase9", "tests.test_phase10", "tests.test_phase11"], cwd=destination)
-        engines_output = run([sys.executable, "-B", "scripts/phase11.py", "engine-gates"], cwd=destination)
+        validate_output = run([sys.executable, "-B", "scripts/phase11.py", "validate"], cwd=destination, extra_env=GIT_WINDOWS_TEXT_ENV)
+        full = run([sys.executable, "-B", "-m", "unittest", "discover", "-s", "tests", "-v"], cwd=destination, extra_env=GIT_WINDOWS_TEXT_ENV)
+        focused = run([sys.executable, "-B", "-m", "unittest", "-v", "tests.test_phase8", "tests.test_phase9", "tests.test_phase10", "tests.test_phase11"], cwd=destination, extra_env=GIT_WINDOWS_TEXT_ENV)
+        independent = run([sys.executable, "-B", "-m", "unittest", "-v", "tests.test_audit_remediation"], cwd=destination, extra_env=GIT_WINDOWS_TEXT_ENV)
+        engines_output = run([sys.executable, "-B", "scripts/phase11.py", "engine-gates"], cwd=destination, extra_env=GIT_WINDOWS_TEXT_ENV)
         engines = json.loads(engines_output.splitlines()[-1])
     finally:
         holder.cleanup()
@@ -655,6 +938,7 @@ def verify_isolated() -> dict[str, object]:
         "prior_validation_files": len(prior_before), "prior_validation_files_identical": True,
         "reproduction": reproduction, "validation": validate_output.splitlines()[-1],
         "complete_tests": _test_count(full), "focused_tests": _test_count(focused),
+        "independent_invariant_tests": _test_count(independent),
         "engines": engines,
     }
 

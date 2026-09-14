@@ -1,5 +1,5 @@
 validation_id,category,test_name,status,observed,expected
-P10V-001,checkpoint,approved Phase 9 lineage,PASS,fe00c19ab717900fe5c7484d8f57975c83483cba,fe00c19ab717900fe5c7484d8f57975c83483cba
+P10V-001,checkpoint,approved Phase 9 lineage,PASS,ce656ebfca67f2bd34a78273f72367e39c0c2037,fe00c19ab717900fe5c7484d8f57975c83483cba
 P10V-002,checkpoint,recorded starting checkpoint,PASS,fe00c19ab717900fe5c7484d8f57975c83483cba,fe00c19ab717900fe5c7484d8f57975c83483cba
 P10V-003,cutoff,source ledger cutoff,PASS,0,0
 P10V-004,lineage,source hashes current,PASS,checked,all match
@@ -9,8 +9,8 @@ P10V-007,governance,no provisional decision status remains,PASS,checked,none
 P10V-008,recommendation,conditional approval retained,PASS,conditional_approval,conditional_approval
 P10V-009,recommendation,fallback explicit,PASS,checked,retain or amend
 P10V-010,recommendation,missing source not debt funded,PASS,checked,no incremental debt
-P10V-011,data,committee metric count,PASS,133,>=130
-P10V-012,data,metric identifiers unique,PASS,133,133
+P10V-011,data,committee metric count,PASS,146,>=130
+P10V-012,data,metric identifiers unique,PASS,146,146
 P10V-013,data,all metric lineage complete,PASS,checked,complete
 P10V-014,numerical,anchor lender_base_ebitda FY2024,PASS,179.358,179.358
 P10V-015,numerical,anchor lender_base_ebitda FY2025,PASS,225.344,225.344
@@ -24,42 +24,50 @@ P10V-022,numerical,anchor common_horizon_total_funded_debt existing,PASS,495.368
 P10V-023,numerical,anchor common_horizon_total_funded_debt reference,PASS,507.9536592508711071826688285,507.9536592508711071826688285
 P10V-024,numerical,anchor common_horizon_total_funded_debt selected,PASS,514.753707786180339509466437,514.753707786180339509466437
 P10V-025,numerical,anchor selected_minus_existing_common_horizon_debt 2029-07-31,PASS,19.3854265794703218545390241,19.3854265794703218545390241
-P10V-026,numerical,anchor maximum_gross_leverage MODERATE_UNMITIGATED,PASS,4.489250193362221,4.489250193362221
-P10V-027,numerical,anchor maximum_gross_leverage MODERATE_MITIGATED,PASS,4.467006108046972,4.467006108046972
-P10V-028,horizon,scenario and maturity horizons explicit,PASS,0,0
-P10V-029,repayment,operating cash is primary repayment,PASS,checked,present
-P10V-030,repayment,revolver is liquidity support,PASS,checked,present
-P10V-031,repayment,refinancing not secondary repayment,PASS,checked,present and correctly classified
-P10V-032,repayment,recovery is secondary backstop,PASS,checked,present
-P10V-033,moderate,moderate breach not cured,PASS,checked,present
-P10V-034,moderate,no automatic waiver,PASS,checked,present
-P10V-035,comparison,no faster same-horizon claim,PASS,checked,corrected
-P10V-036,risk,risk and mitigant matrix,PASS,13,>=10 complete
-P10V-037,conditions,categories remain distinct,PASS,"['analyst_warning', 'condition_precedent', 'monitoring_requirement', 'ongoing_covenant', 'unresolved_diligence']",five required categories
-P10V-038,conditions,all requirements remain open,PASS,checked,open
-P10V-039,consistency,all deliverable checks pass,PASS,0,0
-P10V-040,documents,memo PDF page count,PASS,11,11 total: 7 body + 4 appendices
-P10V-041,documents,brief PDF page count,PASS,1,1
-P10V-042,documents,memo required sections,PASS,True,True
-P10V-043,documents,brief required disclaimer,PASS,True,True
-P10V-044,documents,manual rendered-page QA complete,PASS,12,12 PASS rows
-P10V-045,workbook,14 approved sheets,PASS,14,14
-P10V-046,workbook,seven native charts,PASS,7,7
-P10V-047,workbook,formula count preserved,PASS,2902,2902
-P10V-048,workbook,saved Base,PASS,Base,Base
-P10V-049,workbook,no external links,PASS,0,0
-P10V-050,workbook,no formula errors,PASS,0,0
-P10V-051,workbook,Checks terminal,PASS,0,0
-P10V-052,workbook,LibreOffice opens and inspects,PASS,LibreOffice 26.8.0.3,LibreOffice 26.8.0.3
-P10V-053,workbook,Phase 9 recovery chain,PASS,0,0
-P10V-054,workbook,Phase 9 checks,PASS,0,0
-P10V-055,workbook,Credit Summary status,PASS,Conditional Approval | owner_reviewed,owner_reviewed
-P10V-056,workbook,moderate breach visible,PASS,U/M leverage 4.4893x/4.4670x; coverage 3.2104x/3.2168x,4.4893x/4.4670x
-P10V-057,workbook,common horizon visible,PASS,Total funded debt: existing $495.368m / reference $507.954m / selected $514.754m,all three common-horizon balances
-P10V-058,workbook,official recovery N/D,PASS,Official recovery N/D; collateral/business-sale recovery is secondary backstop,N/D
-P10V-059,scope,no Phase 11 or 12 files,PASS,checked,absent
-P10V-060,repository,changed paths are Phase 10 scoped,PASS,,none
-P10V-061,repository,PDFs classified as binary by repository attributes,PASS,reports/credit_memo.pdf: diff: unset;reports/credit_memo.pdf: merge: unset;reports/credit_memo.pdf: text: unset;reports/committee_brief.pdf: diff: unset;reports/committee_brief.pdf: merge: unset;reports/committee_brief.pdf: text: unset,reports/committee_brief.pdf: diff: unset;reports/committee_brief.pdf: merge: unset;reports/committee_brief.pdf: text: unset;reports/credit_memo.pdf: diff: unset;reports/credit_memo.pdf: merge: unset;reports/credit_memo.pdf: text: unset
-P10V-062,repository,prior analytical artifacts unchanged,PASS,,none
-P10V-063,repository,no credential patterns,PASS,,none
-P10V-064,repository,no absolute local paths in outputs,PASS,,none
+P10V-026,numerical,anchor opening_total_funded_debt existing_actual,PASS,703.869,703.869
+P10V-027,numerical,anchor opening_total_funded_debt existing_projected,PASS,732.51671875,732.51671875
+P10V-028,numerical,anchor opening_total_funded_debt reference_projected,PASS,742.51671875,742.51671875
+P10V-029,numerical,anchor opening_total_funded_debt selected_projected,PASS,727.51671875,727.51671875
+P10V-030,numerical,anchor selected_minus_existing_projected_closing_debt 2026-01-31,PASS,-5.00000000,-5
+P10V-031,numerical,anchor maximum_quarterly_test_leverage MODERATE_UNMITIGATED,PASS,4.489250193362221,4.489250193362221
+P10V-032,numerical,anchor maximum_quarterly_test_leverage MODERATE_MITIGATED,PASS,4.467006108046972,4.467006108046972
+P10V-033,horizon,scenario and maturity horizons explicit,PASS,0,0
+P10V-034,repayment,operating cash is primary repayment,PASS,checked,present
+P10V-035,repayment,revolver is liquidity support,PASS,checked,present
+P10V-036,repayment,refinancing not secondary repayment,PASS,checked,present and correctly classified
+P10V-037,repayment,recovery is secondary backstop,PASS,checked,present
+P10V-038,moderate,moderate breach not cured,PASS,checked,present
+P10V-039,moderate,no automatic waiver,PASS,checked,present
+P10V-040,comparison,same-date projected opening comparison,PASS,checked,corrected
+P10V-041,comparison,no faster same-horizon claim,PASS,checked,corrected
+P10V-042,comparison,no near-term expansion claim,PASS,checked,absent
+P10V-043,recommendation,no final authorization,PASS,checked,present
+P10V-044,risk,risk and mitigant matrix,PASS,13,>=10 complete
+P10V-045,conditions,categories remain distinct,PASS,"['analyst_warning', 'condition_precedent', 'monitoring_requirement', 'ongoing_covenant', 'unresolved_diligence']",five required categories
+P10V-046,conditions,all requirements remain open,PASS,checked,open
+P10V-047,consistency,all deliverable checks pass,PASS,0,0
+P10V-048,documents,memo PDF page count,PASS,11,11 total: 7 body + 4 appendices
+P10V-049,documents,brief PDF page count,PASS,1,1
+P10V-050,documents,memo required sections,PASS,True,True
+P10V-051,documents,brief required disclaimer,PASS,True,True
+P10V-052,documents,manual rendered-page QA complete,PASS,12,12 PASS rows
+P10V-053,workbook,14 approved sheets,PASS,14,14
+P10V-054,workbook,seven native charts,PASS,7,7
+P10V-055,workbook,formula count preserved,PASS,2897,2897
+P10V-056,workbook,saved Base,PASS,Base,Base
+P10V-057,workbook,no external links,PASS,0,0
+P10V-058,workbook,no formula errors,PASS,0,0
+P10V-059,workbook,Checks terminal,PASS,0,0
+P10V-060,workbook,LibreOffice opens and inspects,PASS,LibreOffice 26.8.0.3,LibreOffice 26.8.0.3
+P10V-061,workbook,Phase 9 recovery chain,PASS,0,0
+P10V-062,workbook,Phase 9 checks,PASS,0,0
+P10V-063,workbook,Credit Summary status,PASS,Conditional Approval — proceed with diligence and definitive documentation. | owner_reviewed,owner_reviewed
+P10V-064,workbook,moderate breach visible,PASS,U/M leverage 4.4893x/4.4670x; coverage 3.2104x/3.2168x,4.4893x/4.4670x
+P10V-065,workbook,common horizon visible,PASS,Total funded debt: existing $495.368m / reference $507.954m / selected $514.754m,all three common-horizon balances
+P10V-066,workbook,official recovery N/D,PASS,Official recovery N/D; collateral/business-sale recovery is secondary backstop,N/D
+P10V-067,scope,no Phase 12 implementation,PASS,checked,absent
+P10V-068,repository,changed paths are Phase 10 scoped,PASS,,none
+P10V-069,repository,PDFs classified as binary by repository attributes,PASS,reports/credit_memo.pdf: diff: unset;reports/credit_memo.pdf: merge: unset;reports/credit_memo.pdf: text: unset;reports/committee_brief.pdf: diff: unset;reports/committee_brief.pdf: merge: unset;reports/committee_brief.pdf: text: unset,reports/committee_brief.pdf: diff: unset;reports/committee_brief.pdf: merge: unset;reports/committee_brief.pdf: text: unset;reports/credit_memo.pdf: diff: unset;reports/credit_memo.pdf: merge: unset;reports/credit_memo.pdf: text: unset
+P10V-070,repository,prior analytical changes limited to audit remediation,PASS,,none
+P10V-071,repository,no credential patterns,PASS,,none
+P10V-072,repository,no absolute local paths in outputs,PASS,,none

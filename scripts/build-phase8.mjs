@@ -137,7 +137,7 @@ function styleStatus(range) {
 }
 
 async function buildWorkbook() {
-  const [periodInputs, finalInputs, historical, historicalMetrics, adjustments, bridges, evidence, phase7Ledger, conditions, common, maturity, covenantSummary, checkpoint] = await Promise.all([
+  const [periodInputs, finalInputs, historical, historicalMetrics, adjustments, bridges, evidence, phase7Ledger, conditions, common, maturity, covenantSummary, checkpoint, openingDebt, termSizing, amortizationSensitivity] = await Promise.all([
     csv("data/phase8/raw/MODEL_PERIOD_INPUTS.csv"),
     csv("data/phase7/processed/FINAL_FINANCING_ASSUMPTIONS.csv"),
     csv("data/phase2/processed/historical_spread.csv"),
@@ -151,6 +151,9 @@ async function buildWorkbook() {
     csv("data/phase7/processed/ULTIMATE_MATURITY_COMPARISON.csv"),
     csv("data/phase7/processed/COVENANT_SUMMARY.csv"),
     csv("data/phase8/raw/STARTING_CHECKPOINT.csv"),
+    csv("data/phase8/processed/OPENING_DEBT_COMPARISON.csv"),
+    csv("data/phase8/processed/TERM_SIZING_SENSITIVITY.csv"),
+    csv("data/phase8/processed/AMORTIZATION_SENSITIVITY_RESULTS.csv"),
   ]);
   const fi = Object.fromEntries(finalInputs.map(row => [row.assumption_name, row]));
   const workbook = Workbook.create();
@@ -377,26 +380,40 @@ async function buildWorkbook() {
   tx.getRange("C15:C18").values = [["Opening bank debt"], ["Retained other funded debt"], ["Opening total funded debt"], ["Opening gross funded leverage"]];
   formulaRange(tx, "D15:D18", [["='Assumptions'!D12+'Assumptions'!D15"], ["='Assumptions'!D17"], ["=SUM(D15:D16)"], ["=D17/'Credit Adjustments'!E14"]], true);
   money(tx.getRange("D15:D17")); ratio(tx.getRange("D18"));
-  section(tx, "C20:G20", "Existing and refinancing comparison");
-  headers(tx, "C21:G21", ["Alternative", "Opening funded debt", "Common-horizon ending debt", "Unsupported maturity gap", "All-in base liquidity"]);
+  section(tx, "C20:G20", "Historical reference - October 31, 2025 actual");
+  headers(tx, "C21:G21", ["Reference point", "Date", "Bank debt", "Lease / other debt", "Total funded debt"]);
   const existingC = common.find(r => r.candidate_id === "STR-001"); const selectedC = common.find(r => r.candidate_id === "STR-008"); const referenceC = common.find(r => r.candidate_id === "STR-003");
   const existingM = maturity.find(r => r.candidate_id === "STR-001"); const selectedM = maturity.find(r => r.candidate_id === "STR-008"); const referenceM = maturity.find(r => r.candidate_id === "STR-003");
-  tx.getRange("C22:G24").values = [
-    ["Retain existing facilities", 703.869, num(existingC.ending_total_funded_debt), num(existingM.unsupported_maturity_gap), num(existingC.all_in_minimum_usable_liquidity)],
-    ["Selected $635m refinancing", null, num(selectedC.ending_total_funded_debt), num(selectedM.unsupported_maturity_gap), num(selectedC.all_in_minimum_usable_liquidity)],
-    ["$650m reference refinancing", 742.51671875, num(referenceC.ending_total_funded_debt), num(referenceM.unsupported_maturity_gap), num(referenceC.all_in_minimum_usable_liquidity)],
+  const historicalDebt = openingDebt.find(r => r.comparison_group === "historical_reference");
+  tx.getRange("C22:G22").values = [[historicalDebt.alternative, excelDate(historicalDebt.comparison_date), num(historicalDebt.bank_debt), num(historicalDebt.other_funded_debt), num(historicalDebt.total_funded_debt)]];
+  imported(tx.getRange("C22:G22")); dateFmt(tx.getRange("D22")); money(tx.getRange("E22:G22"));
+  section(tx, "C24:I24", "Projected closing alternatives - January 31, 2026");
+  headers(tx, "C25:I25", ["Alternative", "Date", "Bank debt", "Lease / other debt", "Total funded debt", "vs projected existing", "Status"]);
+  const projectedDebt = openingDebt.filter(r => r.comparison_group === "projected_closing_alternatives");
+  tx.getRange("C26:I28").values = projectedDebt.map((row, index) => [row.alternative, excelDate(row.comparison_date), num(row.bank_debt), num(row.other_funded_debt), num(row.total_funded_debt), index === 0 ? 0 : num(row.total_funded_debt) - num(projectedDebt[0].total_funded_debt), row.status]);
+  imported(tx.getRange("C26:I28")); dateFmt(tx.getRange("D26:D28")); money(tx.getRange("E26:H28")); styleStatus(tx.getRange("I26:I28"));
+  tx.getRange("C30:I30").values = [["Selected is $5.000m below same-date existing only because the conditional $15m source exceeds assumed $10m refinancing fees. If unavailable: resize, obtain acceptable non-debt funding, or do not close."]];
+  tx.mergeCells("C30:I30");
+  tx.getRange("C30:I30").format = { fill: COLORS.warning, font: { name: FONT, italic: true, color: "#7F6000" }, wrapText: true, rowHeight: 34 };
+  section(tx, "C32:G32", "Common horizon and separate ultimate maturities");
+  headers(tx, "C33:G33", ["Alternative", "07/31/29 total funded debt", "vs existing", "Maturity", "Unsupported bank-debt gap"]);
+  tx.getRange("C34:G36").values = [
+    ["Retain existing facilities", num(existingC.ending_total_funded_debt), 0, excelDate(existingM.maturity_date), num(existingM.unsupported_maturity_gap)],
+    ["Selected $635m refinancing", num(selectedC.ending_total_funded_debt), num(selectedC.ending_total_funded_debt) - num(existingC.ending_total_funded_debt), excelDate(selectedM.maturity_date), num(selectedM.unsupported_maturity_gap)],
+    ["$650m reference refinancing", num(referenceC.ending_total_funded_debt), num(referenceC.ending_total_funded_debt) - num(existingC.ending_total_funded_debt), excelDate(referenceM.maturity_date), num(referenceM.unsupported_maturity_gap)],
   ];
-  formulaRange(tx, "D23", [["=D17"]], true); imported(tx.getRange("D22:G24")); crossFormula(tx.getRange("D23")); money(tx.getRange("D22:G24"));
-  tx.getRange("C26:G26").values = [["Limited amendment / extension", "N/D", "N/D", "N/D", "Public information is insufficient for quantitative modeling."]];
-  styleStatus(tx.getRange("D26:F26"));
-  section(tx, "C28:G28", "Commitment and unresolved closing items");
-  tx.getRange("C29:C32").values = [["Revolver commitment"], ["Letters of credit"], ["Gross availability"], ["Usable availability after LCs"]];
-  formulaRange(tx, "D29:D32", [["='Assumptions'!D14"], ["='Assumptions'!D16"], ["='Assumptions'!D14-'Assumptions'!D15"], ["='Assumptions'!D14-'Assumptions'!D16-'Assumptions'!D15"]], true);
-  money(tx.getRange("D29:D32"));
-  tx.getRange("F29:G32").values = [["Financing fees not already approved", "N/D"], ["LC transition mechanics", "Pending information"], ["Final lender pricing", "Pending information"], ["Final payoff and funds flow", "Pending information"]];
-  styleStatus(tx.getRange("G29:G32"));
-  const debtChart = tx.charts.add("bar", tx.getRange("C21:D24")); debtChart.title = "Opening funded debt by alternative (USD millions)"; debtChart.titleTextStyle.typeface = FONT; debtChart.hasLegend = false; debtChart.setPosition("I6", "P20");
-  setWidths(tx, { A: 2, B: 2, C: 34, D: 17, E: 20, F: 36, G: 42 });
+  imported(tx.getRange("C34:G36")); money(tx.getRange("D34:E36")); dateFmt(tx.getRange("F34:F36")); money(tx.getRange("G34:G36"));
+  tx.getRange("C38:G38").values = [["Ultimate gaps use different maturity dates and are not directly comparable. Limited amendment / extension remains N/D without terms."]];
+  tx.mergeCells("C38:G38");
+  tx.getRange("C38:G38").format = { fill: COLORS.paleTan, font: { name: FONT, italic: true, color: "#666666" }, wrapText: true, rowHeight: 28 };
+  section(tx, "C40:G40", "Commitment and unresolved closing items");
+  tx.getRange("C41:C44").values = [["Revolver commitment"], ["Letters of credit"], ["Gross availability"], ["Usable availability after LCs"]];
+  formulaRange(tx, "D41:D44", [["='Assumptions'!D14"], ["='Assumptions'!D16"], ["='Assumptions'!D14-'Assumptions'!D15"], ["='Assumptions'!D14-'Assumptions'!D16-'Assumptions'!D15"]], true);
+  money(tx.getRange("D41:D44"));
+  tx.getRange("F41:G44").values = [["Financing fees not already approved", "N/D"], ["LC transition mechanics", "Pending information"], ["Final lender pricing", "Pending information"], ["Final payoff and funds flow", "Pending information"]];
+  styleStatus(tx.getRange("G41:G44"));
+  const debtChart = tx.charts.add("bar", [tx.getRange("C25:C28"), tx.getRange("G25:G28")]); debtChart.title = "Projected closing funded debt - 01/31/26 (USD millions)"; debtChart.titleTextStyle.typeface = FONT; debtChart.hasLegend = false; debtChart.setPosition("K6", "R20");
+  setWidths(tx, { A: 2, B: 2, C: 32, D: 14, E: 15, F: 18, G: 20, H: 18, I: 24, J: 3 });
 
   // Forecast - one selected-case formula chain across 20 quarters.
   const f = ws.Forecast;
@@ -518,28 +535,28 @@ async function buildWorkbook() {
     const row = 8 + i, dt = covenantDates[i]; const isClosing = i === 0;
     cv.getRange(`C${row}:E${row}`).values = [[excelDate(dt), isClosing ? "FY2025" : quarters[i - 1].fiscal_year, isClosing ? "Closing" : quarters[i - 1].quarter]];
     const debt = isClosing ? "='Transaction'!$D$17" : `=SUMIFS('Debt Schedule'!$Z$12:$Z$47,'Debt Schedule'!$D$12:$D$47,$C${row})`;
-    const ebitda = isClosing ? "='Credit Adjustments'!$E$14*(1+'Assumptions'!$D$21)" : `=SUMIFS('Assumptions'!$AT$41:$AT$364,'Assumptions'!$C$41:$C$364,$D$4,'Assumptions'!$H$41:$H$364,$C${row})*(1+'Assumptions'!$D$21)`;
+    const ebitda = isClosing ? "='Credit Adjustments'!$E$14*(1+'Assumptions'!$D$21)" : `=IF(COUNTIFS('Assumptions'!$C$41:$C$364,$D$4,'Assumptions'!$H$41:$H$364,$C${row},'Assumptions'!$AT$41:$AT$364,"<>")=0,"N/D",SUMIFS('Assumptions'!$AT$41:$AT$364,'Assumptions'!$C$41:$C$364,$D$4,'Assumptions'!$H$41:$H$364,$C${row})*(1+'Assumptions'!$D$21))`;
     const liq = isClosing ? "='Liquidity'!$D$6" : `=SUMIFS('Debt Schedule'!$AB$12:$AB$47,'Debt Schedule'!$D$12:$D$47,$C${row})`;
     const interest = isClosing || dt < "2027-01-31" ? "=\"\"" : `=IF('Assumptions'!$D$19=\"\",\"\",SUMIFS('Debt Schedule'!$T$12:$T$47,'Debt Schedule'!$D$12:$D$47,\">\"&EDATE($C${row},-12),'Debt Schedule'!$D$12:$D$47,\"<=\"&$C${row}))`;
     cv.getRange(`F${row}:AF${row}`).formulas = [[
-      debt, ebitda, `=IF(G${row}<=0,\"\",F${row}/G${row})`, `=IF(G${row}<=0,\"N/M\",TEXT(H${row},\"0.00x\"))`,
+      debt, ebitda, `=IF(G${row}=\"N/D\",\"\",IF(G${row}<=0,\"\",F${row}/G${row}))`, `=IF(G${row}=\"N/D\",\"N/D\",IF(G${row}<=0,\"N/M\",TEXT(H${row},\"0.00x\")))`,
       `=IF(C${row}<=DATE(2027,10,31),'Assumptions'!$D$27,IF(C${row}<=DATE(2028,10,31),'Assumptions'!$D$28,'Assumptions'!$D$29))`,
       `=IF(C${row}<=DATE(2027,10,31),'Assumptions'!$D$32,IF(C${row}<=DATE(2028,10,31),3,2.75))`,
-      `=IF(G${row}<=0,\"N/M\",IF(H${row}>J${row},\"BREACH\",IF(H${row}>=K${row},\"WARNING\",\"COMPLIANT\")))`,
-      interest, `=IF(M${row}=\"\",\"\",IF(M${row}<=0,\"\",G${row}/M${row}))`, `=IF(M${row}=\"\",\"N/D\",IF(M${row}<=0,\"N/M\",TEXT(N${row},\"0.00x\")))`,
-      `='Assumptions'!$D$30`, `='Assumptions'!$D$33`, `=IF(M${row}=\"\",\"N/D\",IF(M${row}<=0,\"N/M\",IF(N${row}<P${row},\"BREACH\",IF(N${row}<Q${row},\"WARNING\",\"COMPLIANT\"))))`,
+      `=IF(G${row}=\"N/D\",\"N/D\",IF(G${row}<=0,\"N/M\",IF(H${row}>J${row},\"BREACH\",IF(H${row}>=K${row},\"WARNING\",\"COMPLIANT\"))))`,
+      interest, `=IF(OR(G${row}=\"N/D\",M${row}=\"\"),\"\",IF(OR(G${row}<=0,M${row}<=0),\"\",G${row}/M${row}))`, `=IF(OR(G${row}=\"N/D\",M${row}=\"\"),\"N/D\",IF(OR(G${row}<=0,M${row}<=0),\"N/M\",TEXT(N${row},\"0.00x\")))`,
+      `='Assumptions'!$D$30`, `='Assumptions'!$D$33`, `=IF(OR(G${row}=\"N/D\",M${row}=\"\"),\"N/D\",IF(OR(G${row}<=0,M${row}<=0),\"N/M\",IF(N${row}<P${row},\"BREACH\",IF(N${row}<Q${row},\"WARNING\",\"COMPLIANT\"))))`,
       liq, `=IF(S${row}<'Assumptions'!$D$31,\"BREACH\",IF(S${row}<'Assumptions'!$D$34,\"WARNING\",\"COMPLIANT\"))`,
       `=IF(OR(L${row}=\"WARNING\",R${row}=\"WARNING\",T${row}=\"WARNING\"),\"WARNING\",\"NONE\")`,
-      `=IF(OR(L${row}=\"BREACH\",R${row}=\"BREACH\",T${row}=\"BREACH\"),\"BREACH\",IF(OR(L${row}=\"N/M\",R${row}=\"N/M\"),\"N/M\",IF(OR(L${row}=\"N/D\",R${row}=\"N/D\"),\"N/D\",\"COMPLIANT\")))`,
+      `=IF(OR(L${row}=\"N/M\",R${row}=\"N/M\"),\"N/M\",IF(OR(L${row}=\"N/D\",R${row}=\"N/D\"),\"N/D\",IF(OR(L${row}=\"BREACH\",R${row}=\"BREACH\",T${row}=\"BREACH\"),\"BREACH\",\"COMPLIANT\")))`,
       isClosing ? "=\"AVAILABLE\"" : `=IF(COUNTIFS('Debt Schedule'!$D$12:$D$47,$C${row},'Debt Schedule'!$AD$12:$AD$47,\"*shutoff*\")>0,\"SHUTOFF\",\"AVAILABLE\")`,
-      `=IF(OR(I${row}=\"N/D\",I${row}=\"N/M\",O${row}=\"N/D\",O${row}=\"N/M\"),\"INCOMPLETE\",\"COMPLETE\")`,
+      `=IF(OR(G${row}=\"N/D\",M${row}=\"\"),\"INCOMPLETE\",\"COMPLETE\")`,
       isClosing ? "='Assumptions'!$D$24" : `=SUMIFS('Debt Schedule'!$W$12:$W$47,'Debt Schedule'!$D$12:$D$47,$C${row})`,
       `='Assumptions'!$D$24`, isClosing ? "=0" : `=SUMIFS('Debt Schedule'!$AC$12:$AC$47,'Debt Schedule'!$D$12:$D$47,$C${row})`,
       isClosing ? "=0" : `=IF($C${row}='Assumptions'!$D$35,SUMIFS('Debt Schedule'!$X$12:$X$47,'Debt Schedule'!$D$12:$D$47,$C${row}),0)`,
       `=IF(ISNUMBER(H${row}),J${row}-H${row},\"\")`,
       `=IF(AND(ISNUMBER(G${row}),G${row}>0),G${row}*J${row}-F${row},\"\")`,
       `=IF(J${row}<=0,\"\",F${row}/J${row})`,
-      `=IF(OR(M${row}=\"\",M${row}<=0),\"\",G${row}-M${row}*P${row})`,
+      `=IF(OR(G${row}=\"N/D\",G${row}<=0,M${row}=\"\",M${row}<=0),\"\",G${row}-M${row}*P${row})`,
     ]];
     cv.getRange(`AG${row}`).formulas = [[`=TEXT(C${row},\"mmm-yy\")`]];
   }
@@ -556,10 +573,10 @@ async function buildWorkbook() {
   sc.getRange("D3").formulas = [["='Assumptions'!$D$4"]];
   sc.getRange("D3").format.font = { name: FONT, size: 10, bold: true, color: COLORS.blue };
   section(sc, "C6:Y6", "Current selected-case results");
-  headers(sc, "C4:Y4", ["View", "Scenario ID", "Status", "FY2026 post-close EBITDA", "EBITDA margin", "Modeled operating cash", "CFADS", "Cash interest", "Scheduled principal", "ECF sweep", "Peak revolver", "Opening liquidity", "Subsequent minimum", "All-in minimum", "Maximum leverage", "Minimum coverage", "First warning", "First breach", "First draw shutoff", "First payment failure", "Common-horizon ending debt", "Maturity gap", "Unpaid obligations"]);
+  headers(sc, "C4:Y4", ["View", "Scenario ID", "Status", "FY2026 post-close EBITDA", "EBITDA margin", "Modeled operating cash", "CFADS", "Cash interest", "Scheduled principal", "ECF sweep", "Peak revolver", "Opening liquidity", "Subsequent minimum", "All-in minimum", "Maximum quarterly-test leverage", "Minimum coverage", "First warning", "First breach", "First draw shutoff", "First payment failure", "Common-horizon ending debt", "Maturity gap", "Unpaid obligations"]);
   sc.getRange("C5:E5").formulas = [["=\"LIVE\"", "='Assumptions'!D5", "=\"Current selection\""]];
   sc.getRange("F5:Y5").formulas = [[
-    "=SUM('Forecast'!D14:F14)", "=SUM('Forecast'!D14:F14)/SUM('Forecast'!D10:F10)", "=SUM('Forecast'!D24:W24)", "=SUM('Forecast'!D22:W22)", "=SUM('Debt Schedule'!T12:T47)", "=SUM('Debt Schedule'!K12:K47)", "=SUM('Debt Schedule'!L12:L47)", "=MAX('Debt Schedule'!R12:R47)",
+    "=SUM('Forecast'!D14:F14)", "=SUM('Forecast'!D14:F14)/SUM('Forecast'!D10:F10)", "=SUM('Forecast'!D24:W24)", "=SUM('Forecast'!D22:W22)", "=SUM('Debt Schedule'!T12:T47)", "=SUM('Debt Schedule'!K12:K47)", "=SUM('Debt Schedule'!L12:L47)", "=MAX('Transaction'!$D$9,MAX('Debt Schedule'!R12:R47))",
     "='Liquidity'!D6", "='Liquidity'!D7", "='Liquidity'!D9", "=MAX('Covenants'!H8:H27)", "=MIN('Covenants'!N8:N27)",
     lookupScenarioMeta("BF", "'Assumptions'!$D$4"), lookupScenarioMeta("BG", "'Assumptions'!$D$4"), lookupScenarioMeta("BH", "'Assumptions'!$D$4"), lookupScenarioMeta("BI", "'Assumptions'!$D$4"),
     "=SUMIFS('Debt Schedule'!Z12:Z47,'Debt Schedule'!D12:D47,DATE(2029,7,31))", "='Debt Schedule'!X47", "=SUM('Debt Schedule'!AC12:AC47)",
@@ -567,7 +584,7 @@ async function buildWorkbook() {
   crossFormula(sc.getRange("C5:Y5")); money(sc.getRange("F5:F5")); percent(sc.getRange("G5")); money(sc.getRange("H5:P5")); ratio(sc.getRange("Q5:R5")); money(sc.getRange("W5:Y5")); dateFmt(sc.getRange("S5:V5"));
   sc.getRange("C8").values = [["Captured comparisons are recalculated snapshots, not parallel live engines. Change in any modeled input makes the stale flag visible until the capture workflow is rerun."]];
   sc.getRange("C8:AE8").format = { fill: COLORS.paleTan, font: { name: FONT, italic: true, color: "#666666" }, wrapText: false, rowHeight: 24 };
-  headers(sc, "C11:AE11", ["Scenario", "Scenario ID", "View", "FY2026 post-close EBITDA", "EBITDA margin", "Modeled operating cash", "CFADS", "Cash interest", "Scheduled principal", "ECF sweep", "Peak revolver", "Opening liquidity", "Subsequent minimum", "All-in minimum", "Maximum leverage", "Minimum coverage", "First warning", "First breach", "First draw shutoff", "First payment failure", "Common-horizon ending debt", "Maturity gap", "Unpaid obligations", "Captured at", "Input version", "Source hash", "Captured signature", "Current signature", "Stale status"]);
+  headers(sc, "C11:AE11", ["Scenario", "Scenario ID", "View", "FY2026 post-close EBITDA", "EBITDA margin", "Modeled operating cash", "CFADS", "Cash interest", "Scheduled principal", "ECF sweep", "Peak revolver", "Opening liquidity", "Subsequent minimum", "All-in minimum", "Maximum quarterly-test leverage", "Minimum coverage", "First warning", "First breach", "First draw shutoff", "First payment failure", "Common-horizon ending debt", "Maturity gap", "Unpaid obligations", "Captured at", "Input version", "Source hash", "Captured signature", "Current signature", "Stale status"]);
   for (let i = 0; i < SCENARIOS.length; i += 1) {
     const row = 12 + i;
     sc.getRange(`C${row}:D${row}`).values = [[SCENARIOS[i][0], SCENARIOS[i][1]]];
@@ -588,7 +605,7 @@ async function buildWorkbook() {
   cs.getRange("D8:D12").values = [["Quanex Building Products Corporation"], [excelDate("2025-12-15")], [excelDate("2026-01-31")], ["$635m term / $300m revolver / $15m conditional source"], [50]];
   formulaRange(cs, "D13:D14", [["='Transaction'!D17"], ["='Transaction'!D18"]], true); dateFmt(cs.getRange("D9:D10")); money(cs.getRange("D12:D13")); ratio(cs.getRange("D14"));
   section(cs, "C16:F16", "Selected-case outcomes");
-  cs.getRange("C17:C28").values = [["FY2026 post-closing lender-base EBITDA"], ["Modeled operating cash"], ["CFADS through maturity"], ["Cash interest"], ["Opening usable liquidity"], ["Subsequent minimum liquidity"], ["All-in minimum liquidity"], ["Maximum gross leverage"], ["Minimum cash-interest coverage"], ["Closing cash-interest coverage"], ["Common-horizon ending funded debt"], ["Unsupported maturity gap"]];
+  cs.getRange("C17:C28").values = [["FY2026 post-closing lender-base EBITDA"], ["Modeled operating cash"], ["CFADS through maturity"], ["Cash interest"], ["Opening usable liquidity"], ["Subsequent minimum liquidity"], ["All-in minimum liquidity"], ["Maximum quarterly-test leverage"], ["Minimum cash-interest coverage"], ["Closing cash-interest coverage"], ["Common-horizon ending funded debt"], ["Unsupported maturity gap"]];
   formulaRange(cs, "D17:D25", [["='Scenario Comparison'!F5"], ["='Scenario Comparison'!H5"], ["='Scenario Comparison'!I5"], ["='Scenario Comparison'!J5"], ["='Scenario Comparison'!N5"], ["='Scenario Comparison'!O5"], ["='Scenario Comparison'!P5"], ["='Scenario Comparison'!Q5"], ["='Scenario Comparison'!R5"]], true);
   cs.getRange("D26").values = [["N/D"]];
   formulaRange(cs, "D27:D28", [["='Scenario Comparison'!W5"], ["='Scenario Comparison'!X5"]], true);
@@ -632,14 +649,10 @@ async function buildWorkbook() {
   // Sensitivities.
   const s = ws.Sensitivities;
   title(s, "Decision-relevant sensitivities");
-  section(s, "C6:F6", "Term sizing and opening gross leverage");
-  headers(s, "C7:F7", ["Term amount", "Opening revolver", "Non-debt source", "Opening leverage"]);
-  const terms = [625, 635, 640, 650];
-  for (let i = 0; i < terms.length; i += 1) {
-    const row = 8 + i; s.getRange(`C${row}`).values = [[terms[i]]];
-    s.getRange(`D${row}:F${row}`).formulas = [["='Assumptions'!$D$15", "='Assumptions'!$D$13", `=(C${row}+D${row}+'Assumptions'!$D$17)/('Credit Adjustments'!$E$14*(1+'Assumptions'!$D$21))`]];
-  }
-  imported(s.getRange("C8:C11")); crossFormula(s.getRange("D8:F11")); money(s.getRange("C8:E11")); ratio(s.getRange("F8:F11"));
+  section(s, "C6:K6", "Term sizing - authoritative Phase 7 closing pairings");
+  headers(s, "C7:K7", ["Term", "Opening revolver", "Non-debt source", "Total sources", "Total uses", "Sources less uses", "Closing funded debt", "Opening leverage", "Status"]);
+  s.getRange("C8:K11").values = termSizing.map(row => [num(row.term_amount), num(row.opening_revolver), num(row.non_debt_source), num(row.total_sources), num(row.total_uses), num(row.sources_less_uses), num(row.projected_closing_funded_debt), num(row.opening_leverage), row.case_status]);
+  imported(s.getRange("C8:K11")); money(s.getRange("C8:I11")); ratio(s.getRange("J8:J11")); styleStatus(s.getRange("K8:K11"));
   section(s, "C14:H14", "EBITDA and leverage headroom");
   headers(s, "C15:H15", ["EBITDA change", "Lender EBITDA", "Opening leverage", "3.50x debt headroom", "3.25x warning headroom", "Maturity-gap diagnostic"]);
   const changes = [-0.20, -0.10, 0, 0.10, 0.20];
@@ -648,23 +661,23 @@ async function buildWorkbook() {
     s.getRange(`D${row}:H${row}`).formulas = [[`='Credit Adjustments'!$E$14*(1+C${row})`, `='Transaction'!$D$17/D${row}`, `=D${row}*3.5-'Transaction'!$D$17`, `=D${row}*3.25-'Transaction'!$D$17`, `='Scenario Comparison'!$X$5-('Credit Adjustments'!$E$14-D${row})*0.5`]];
   }
   imported(s.getRange("C16:C20")); crossFormula(s.getRange("D16:H20")); percent(s.getRange("C16:C20")); money(s.getRange("D16:D20")); ratio(s.getRange("E16:E20")); money(s.getRange("F16:H20"));
-  section(s, "J6:N6", "Rate, working capital and liquidity");
-  headers(s, "J7:N7", ["Spread change", "Cash interest diagnostic", "DSO change", "Liquidity effect", "Maturity-gap effect"]);
+  section(s, "J14:N14", "Rate, working capital and liquidity");
+  headers(s, "J15:N15", ["Spread change", "Cash interest diagnostic", "DSO change", "Liquidity effect", "Maturity-gap effect"]);
   const rateChanges = [-0.01, 0, 0.01, 0.02];
   for (let i = 0; i < rateChanges.length; i += 1) {
-    const row = 8 + i; s.getRange(`J${row}`).values = [[rateChanges[i]]]; s.getRange(`L${row}`).values = [[[-5, 0, 5, 10][i]]];
+    const row = 16 + i; s.getRange(`J${row}`).values = [[rateChanges[i]]]; s.getRange(`L${row}`).values = [[[-5, 0, 5, 10][i]]];
     s.getRange(`K${row}`).formulas = [[`='Scenario Comparison'!$J$5+J${row}*AVERAGE('Debt Schedule'!S12:S47)*5`]];
     s.getRange(`M${row}:N${row}`).formulas = [[`=-L${row}*SUM('Forecast'!D10:W10)/365`, `=MAX(0,'Scenario Comparison'!$X$5-M${row})`]];
   }
-  imported(s.getRange("J8:J11")); imported(s.getRange("L8:L11")); crossFormula(s.getRange("K8:K11")); crossFormula(s.getRange("M8:N11")); percent(s.getRange("J8:J11")); money(s.getRange("K8:K11")); money(s.getRange("M8:N11"));
-  section(s, "J14:N14", "Amortization and liquidity");
-  headers(s, "J15:N15", ["Annual amortization", "Scheduled principal", "ECF sweep", "All-in liquidity", "Maturity gap"]);
-  const amorts = [0.05, 0.075, 0.10, 0.15];
-  for (let i = 0; i < amorts.length; i += 1) {
-    const row = 16 + i; s.getRange(`J${row}`).values = [[amorts[i]]];
-    s.getRange(`K${row}:N${row}`).formulas = [[`='Assumptions'!$D$12*J${row}*5`, `='Scenario Comparison'!$L$5`, `='Scenario Comparison'!$P$5`, `=MAX(0,'Scenario Comparison'!$X$5-('Assumptions'!$D$12*J${row}*5-'Assumptions'!$D$12*'Assumptions'!$D$18*5))`]];
-  }
-  imported(s.getRange("J16:J19")); crossFormula(s.getRange("K16:N19")); percent(s.getRange("J16:J19")); money(s.getRange("K16:N19")); setWidths(s, { A: 2, B: 2, C: 18, D: 18, E: 18, F: 18, G: 18, H: 20, I: 3, J: 20, K: 20, L: 17, M: 18, N: 18 });
+  imported(s.getRange("J16:J19")); imported(s.getRange("L16:L19")); crossFormula(s.getRange("K16:K19")); crossFormula(s.getRange("M16:N19")); percent(s.getRange("J16:J19")); money(s.getRange("K16:K19")); money(s.getRange("M16:N19"));
+  section(s, "C23:Q23", "Integrated selected-structure amortization sensitivity - Base operating case");
+  headers(s, "C24:Q24", ["Annual amort.", "Scheduled principal", "Avg. bank debt", "Cash interest", "Peak revolver", "Min. operating cash", "Min. usable liquidity", "ECF sweep", "Ending bank debt", "07/31/29 funded debt", "Maturity gap", "Max quarterly-test leverage", "Min complete LTM coverage", "First warning", "First breach"]);
+  s.getRange("C25:Q28").values = amortizationSensitivity.map(row => [num(row.annual_amortization_percent) / 100, num(row.cumulative_scheduled_principal), num(row.average_modeled_bank_debt), num(row.cumulative_cash_interest), num(row.peak_revolver), num(row.minimum_operating_cash), num(row.minimum_usable_liquidity), num(row.cumulative_ecf_sweep), num(row.ending_bank_debt), num(row.common_horizon_total_funded_debt), num(row.unsupported_maturity_gap), num(row.maximum_quarterly_test_leverage), num(row.minimum_complete_ltm_coverage), row.first_warning_date, row.first_breach_date]);
+  imported(s.getRange("C25:Q28")); percent(s.getRange("C25:C28")); money(s.getRange("D25:M28")); ratio(s.getRange("N25:O28")); styleStatus(s.getRange("P25:Q28"));
+  s.getRange("C30:Q30").values = [["Each row reruns the Phase 7 integrated cash, debt, revolver, interest, liquidity, ECF sweep, covenant, and maturity mechanics. The 7.5% row is the approved selected Base case."]];
+  s.mergeCells("C30:Q30");
+  s.getRange("C30:Q30").format = { fill: COLORS.paleTan, font: { name: FONT, italic: true, color: "#666666" }, wrapText: true, rowHeight: 30 };
+  setWidths(s, { A: 2, B: 2, C: 15, D: 17, E: 17, F: 17, G: 17, H: 18, I: 17, J: 17, K: 18, L: 18, M: 18, N: 18, O: 18, P: 16, Q: 16 });
 
   // Sources register.
   const src = ws.Sources;
@@ -750,9 +763,9 @@ async function inspectWorkbook() {
   const workbook = await SpreadsheetFile.importXlsx(input);
   const ranges = {
     "Credit Summary": "C1:N45", "Assumptions": "C1:L38", "Scenario Comparison": "C1:AP21",
-    "Historicals": "C1:T56", "Credit Adjustments": "C1:AB33", "Transaction": "C1:P34",
+    "Historicals": "C1:T56", "Credit Adjustments": "C1:AB33", "Transaction": "C1:R45",
     "Forecast": "C1:W29", "Debt Schedule": "C1:AD48", "Liquidity": "C1:AI48",
-    "Covenants": "C1:AR28", "Recovery": "C1:F15", "Sensitivities": "C1:N22",
+    "Covenants": "C1:AR28", "Recovery": "C1:F15", "Sensitivities": "C1:Q31",
     "Sources": "A1:M62", "Checks": "C1:H38",
   };
   await fs.mkdir(previewDir, { recursive: true });

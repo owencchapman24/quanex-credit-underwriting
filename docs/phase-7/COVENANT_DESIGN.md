@@ -37,7 +37,7 @@ The analyst warning levels are 0.25x inside the leverage covenants, 3.50x covera
 
 ## Selected-structure covenant summary
 
-| Path | Closing warning | Closing covenant | Max leverage | Min coverage | Opening liquidity | Subsequent minimum (date) | All-in minimum (date) | First warning | First breach | First draw shutoff | Payment failure | Maturity gap |
+| Path | Closing warning | Closing covenant | Maximum quarterly-test leverage | Min coverage | Opening liquidity | Subsequent minimum (date) | All-in minimum (date) | First warning | First breach | First draw shutoff | Payment failure | Maturity gap |
 |---|---|---|---:|---:|---:|---:|---:|---|---|---|---|---:|
 | BASE | not_determinable | not_determinable | 3.228471664433044589605225788x | 5.385958143510740202126050031x | $263.902m | $270.341m (2026-02-28) | $263.902m (OPENING_POSITION) | none | none | none | none | $324.780m |
 | MODERATE_UNMITIGATED | not_determinable | not_determinable | 4.489250193362220496112949436x | 3.21037383225652856657170589x | $263.902m | $165.078m (2027-01-31) | $165.078m (2027-01-31) | 2026-10-31 | 2026-10-31 | none | none | $408.375m |

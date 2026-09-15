@@ -81,7 +81,7 @@ SOURCE_INPUTS = (
     "docs/phase-7/SOURCE_LEDGER.csv",
 )
 
-DYNAMIC_TEST_DEFINITION_VERSION = "P8-DYNAMIC-2.0"
+DYNAMIC_TEST_DEFINITION_VERSION = "P8-DYNAMIC-2.1"
 DYNAMIC_TEST_ENGINE = "LibreOffice 26.8.0.3"
 DYNAMIC_TESTED_ARTIFACT = "model/Quanex_Credit_Underwriting.xlsx (Phase 8 pre-recalculation disposable test copy)"
 
@@ -166,6 +166,10 @@ REQUIRED_DYNAMIC_CASES = (
     _dynamic_case("P8DT-058", "snapshot stale flag activates", "freshness", "Base", "Assumptions!D12 +$1m; Scenario Comparison!AE12"),
     _dynamic_case("P8DT-059", "Base parity restored", "restore", "Base", "all Phase 8 dynamic edits reset; selected outputs"),
     _dynamic_case("P8DT-060", "final scenario restored to Base", "restore", "Base", "Assumptions!D4 final saved state"),
+    _dynamic_case("P8DT-061", "covenant-linked EBITDA improvement moves breach, shutoff and financing", "live_event_state", "Moderate Phase 7 covenant-linked no-waiver", "Assumptions!D21 +20%; Covenants, Debt Schedule and Scenario Comparison"),
+    _dynamic_case("P8DT-062", "covenant-linked deterioration advances breach and shutoff", "live_event_state", "Moderate Phase 7 covenant-linked no-waiver", "Assumptions!D21 -10%; following-period shutoff and zero post-shutoff draws"),
+    _dynamic_case("P8DT-063", "combined live inputs preserve event and financing coherence", "live_event_state", "Moderate Phase 7 covenant-linked no-waiver", "Assumptions!D18,D20,D21,D23 combined adverse edit; event dates, financing and identities"),
+    _dynamic_case("P8DT-064", "Phase 6 exogenous shutoff remains independent", "live_event_state", "Moderate Phase 6 analytical shutoff", "stored active analytical-shutoff state remains separate from covenant-linked logic"),
 )
 
 DYNAMIC_EVIDENCE_FIELDS = (

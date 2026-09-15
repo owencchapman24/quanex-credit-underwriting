@@ -10,7 +10,7 @@ P8V-008,workbook,native charts,PASS,7,>=5
 P8V-009,workbook,calculation mode,PASS,,auto
 P8V-010,engine,engine recalculation,PASS,LibreOffice 26.8.0.3,LibreOffice 26.8.0.3
 P8V-011,scenario,final scenario,PASS,Base,Base
-P8V-012,dynamic,dynamic tests,PASS,60 required dynamic cases passed under P8-DYNAMIC-2.0,PASS with separately identifiable evidence
+P8V-012,dynamic,dynamic tests,PASS,64 required dynamic cases passed under P8-DYNAMIC-2.1,PASS with separately identifiable evidence
 P8V-013,checks,terminal workbook checks,PASS,0,0
 P8V-014,parity,parity: fy2024_lender_base_ebitda,PASS,179.358,179.358
 P8V-015,parity,parity: fy2025_lender_base_ebitda,PASS,225.344,225.344

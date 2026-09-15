@@ -33,9 +33,9 @@ BRIEF = ROOT / "reports" / "committee_brief.pdf"
 # current release candidate.
 APPROVED_PHASE10_COMMIT = "ce656ebfca67f2bd34a78273f72367e39c0c2037"
 APPROVED_PHASE10_PARENT = "9fca23a949d1f8d8dee6f37906cb086ec6cda994"
-APPROVED_WORKBOOK_SHA = "6e31a259aebe14b4e9a379348d4b686f6a1148a6db743c72646a783321167454"
-APPROVED_WORKBOOK_SIZE = 301_362
-APPROVED_WORKBOOK_FINGERPRINT = "4d927e955f1cc9ede829aab41b26e43f62cfe23812d5018f54c12b73028b923a"
+APPROVED_WORKBOOK_SHA = "34c511280b27ecbe4eca0ebdf1a772b1e975a45b4ee965081f6cb32368b1ad52"
+APPROVED_WORKBOOK_SIZE = 302_919
+APPROVED_WORKBOOK_FINGERPRINT = "49acaabf9860f638e42af6a7ed62d6557b5068e05a4f10a0d5e4871b7d8cc804"
 EXPECTED_FORMULA_COUNT = 3473
 APPROVED_MEMO_SHA = "dea0465ae7ee29be0c993c1ac4f57ac396b872763b2c657fded1edcb9c5e95b8"
 APPROVED_BRIEF_SHA = "af8d3799f511daa77df202274b4d7dde670e2e6b04c0c4c98f482b896a5627d6"
@@ -60,6 +60,10 @@ EXCEL_PHASE8_REQUIRED_PROBE_CASES = frozenset({
     "combined_rate_amortization_ebitda_dso",
     "tight_liquidity",
     "no_waiver_stress",
+    "covenant_linked_improvement",
+    "covenant_linked_deterioration",
+    "covenant_linked_combined_inputs",
+    "phase6_exogenous_shutoff",
     "balanced_funding_signature_collision",
     "warning_threshold_equalities",
 })
@@ -1172,9 +1176,9 @@ def validate_phase8_excel_report(report: dict[str, object]) -> dict[str, object]
     identity_rows = [
         row for row in probes if "max_identity_difference" in row
     ]
-    if len(identity_rows) != 8:
+    if len(identity_rows) != 12:
         raise Phase11Error(
-            f"Phase 8 Excel gate returned {len(identity_rows)} financing-identity probes; expected 8"
+            f"Phase 8 Excel gate returned {len(identity_rows)} financing-identity probes; expected 12"
         )
     maximum_identity_difference = max(
         abs(float(row["max_identity_difference"])) for row in identity_rows

@@ -193,6 +193,88 @@ function Get-ColumnSum($sheet, [string]$column, [int]$firstRow = 12, [int]$lastR
     return $total
 }
 
+function Find-FirstTextEventDate(
+    $sheet, [string]$statusColumn, [string]$expectedStatus,
+    [int]$firstRow, [int]$lastRow, [string]$dateColumn
+) {
+    foreach ($row in $firstRow..$lastRow) {
+        if ((Get-Text $sheet "$statusColumn$row") -eq $expectedStatus) {
+            return Get-Number $sheet "$dateColumn$row"
+        }
+    }
+    return $null
+}
+
+function Find-FirstWarningOrBreachDate($covenants) {
+    foreach ($row in 8..27) {
+        if (
+            (Get-Text $covenants "U$row") -eq "WARNING" -or
+            (Get-Text $covenants "L$row") -eq "BREACH" -or
+            (Get-Text $covenants "R$row") -eq "BREACH" -or
+            (Get-Text $covenants "T$row") -eq "BREACH"
+        ) {
+            return Get-Number $covenants "C$row"
+        }
+    }
+    return $null
+}
+
+function Find-FirstCovenantBreachDate($covenants) {
+    foreach ($row in 8..27) {
+        if (
+            (Get-Text $covenants "L$row") -eq "BREACH" -or
+            (Get-Text $covenants "R$row") -eq "BREACH" -or
+            (Get-Text $covenants "T$row") -eq "BREACH"
+        ) {
+            return Get-Number $covenants "C$row"
+        }
+    }
+    return $null
+}
+
+function Find-FirstPositiveEventDate(
+    $sheet, [string]$valueColumn, [int]$firstRow, [int]$lastRow, [string]$dateColumn
+) {
+    foreach ($row in $firstRow..$lastRow) {
+        if ((Get-Number $sheet "$valueColumn$row") -gt 0.000001) {
+            return Get-Number $sheet "$dateColumn$row"
+        }
+    }
+    return $null
+}
+
+function Assert-SummaryEventDate(
+    $summarySheet, [string]$address, $expectedDate, [string]$label
+) {
+    if ($null -eq $expectedDate) {
+        if ((Get-Text $summarySheet $address) -ne "N/D") {
+            throw "$label summary should be N/D"
+        }
+        return
+    }
+    Assert-Near (Get-Number $summarySheet $address) ([double]$expectedDate) 0.000001 "$label summary date"
+}
+
+function Get-NextMonthEndSerial([double]$serial) {
+    $date = [DateTime]::FromOADate($serial)
+    return ([DateTime]::new($date.Year, $date.Month, 1)).AddMonths(2).AddDays(-1).ToOADate()
+}
+
+function Assert-NoDrawsWhileShutoff($debt, [string]$label) {
+    $shutoffRows = @()
+    $draws = 0.0
+    foreach ($row in 12..47) {
+        if ((Get-Text $debt "AD$row") -eq "SHUTOFF") {
+            $shutoffRows += $row
+            $draws += Get-Number $debt "P$row"
+        }
+    }
+    if ($shutoffRows.Count -eq 0 -or [Math]::Abs($draws) -gt 0.000001) {
+        throw "$label did not preserve zero draws in every shutoff period"
+    }
+    return [pscustomobject]@{ rows = $shutoffRows; draws = $draws }
+}
+
 function Assert-Near([double]$observed, [double]$expected, [double]$tolerance, [string]$label) {
     if ([Math]::Abs($observed - $expected) -gt $tolerance) {
         throw "$label failed: observed=$observed expected=$expected tolerance=$tolerance"
@@ -394,21 +476,111 @@ try {
     Invoke-FullCalculation $excel
     $shortfalls = (Get-ColumnSum $debt "AF") + (Get-ColumnSum $debt "AH") + (Get-ColumnSum $debt "AJ")
     if ($shortfalls -le 0.001) { throw "Tight-liquidity case did not expose mandatory-payment shortfalls" }
-    $probeResults += [pscustomobject]@{ case = "tight_liquidity"; status = "PASS"; max_identity_difference = (Assert-FinancingIdentities $debt "Tight liquidity"); mandatory_shortfalls = $shortfalls; minimum_liquidity = (Get-Number $scenarioComparison "P5") }
+    $tightFailure = Find-FirstPositiveEventDate $debt "AC" 12 47 "D"
+    if ($null -eq $tightFailure) { throw "Tight-liquidity case did not expose a first mandatory-payment failure" }
+    Assert-SummaryEventDate $scenarioComparison "V5" $tightFailure "Tight-liquidity first payment failure"
+    $probeResults += [pscustomobject]@{ case = "tight_liquidity"; status = "PASS"; max_identity_difference = (Assert-FinancingIdentities $debt "Tight liquidity"); mandatory_shortfalls = $shortfalls; minimum_liquidity = (Get-Number $scenarioComparison "P5"); first_payment_failure = $tightFailure }
     Reset-ApprovedBase $excel $assumptions
 
+    # Q-009 unchanged approved Phase 7 path: the live event chain must retain
+    # the approved October breach and following-month November shutoff.
     Set-CellValue $assumptions "D4" "Moderate Phase 7 covenant-linked no-waiver"
     Invoke-FullCalculation $excel
-    $shutoffRows = @()
-    $drawsAfterShutoff = 0.0
-    foreach ($row in 12..47) {
-        if ((Get-Text $debt "AD$row") -eq "SHUTOFF") {
-            $shutoffRows += $row
-            $drawsAfterShutoff += Get-Number $debt "P$row"
-        }
+    $originalWarning = Find-FirstWarningOrBreachDate $covenants
+    $originalBreach = Find-FirstCovenantBreachDate $covenants
+    $originalShutoff = Find-FirstTextEventDate $debt "AD" "SHUTOFF" 12 47 "D"
+    $originalFailure = Find-FirstPositiveEventDate $debt "AC" 12 47 "D"
+    Assert-Near $originalWarning ([DateTime]"2026-10-31").ToOADate() 0.000001 "Original Phase 7 first warning"
+    Assert-Near $originalBreach ([DateTime]"2026-10-31").ToOADate() 0.000001 "Original Phase 7 first breach"
+    Assert-Near $originalShutoff ([DateTime]"2026-11-30").ToOADate() 0.000001 "Original Phase 7 first shutoff"
+    if ($null -ne $originalFailure) { throw "Original moderate Phase 7 path unexpectedly has a mandatory-payment failure" }
+    Assert-SummaryEventDate $scenarioComparison "S5" $originalWarning "Original Phase 7 first warning"
+    Assert-SummaryEventDate $scenarioComparison "T5" $originalBreach "Original Phase 7 first breach"
+    Assert-SummaryEventDate $scenarioComparison "U5" $originalShutoff "Original Phase 7 first shutoff"
+    Assert-SummaryEventDate $scenarioComparison "V5" $originalFailure "Original Phase 7 first payment failure"
+    $originalDrawControl = Assert-NoDrawsWhileShutoff $debt "Original Phase 7 covenant-linked path"
+    if ((Get-Text $debt "AD20") -ne "AVAILABLE" -or (Get-Text $debt "AD21") -ne "SHUTOFF") {
+        throw "Original Phase 7 following-period shutoff timing changed"
     }
-    if ($shutoffRows.Count -eq 0 -or [Math]::Abs($drawsAfterShutoff) -gt 0.000001) { throw "No-waiver draw shutoff was not preserved" }
-    $probeResults += [pscustomobject]@{ case = "no_waiver_stress"; status = "PASS"; max_identity_difference = (Assert-FinancingIdentities $debt "No-waiver stress"); shutoff_periods = $shutoffRows.Count; draws_after_shutoff = $drawsAfterShutoff }
+    $probeResults += [pscustomobject]@{ case = "no_waiver_stress"; status = "PASS"; max_identity_difference = (Assert-FinancingIdentities $debt "No-waiver stress"); first_warning = $originalWarning; first_breach = $originalBreach; first_shutoff = $originalShutoff; first_payment_failure = "N/D"; shutoff_periods = $originalDrawControl.rows.Count; draws_after_shutoff = $originalDrawControl.draws }
+    Reset-ApprovedBase $excel $assumptions
+
+    # Q-009 improvement: live EBITDA removes the October breach, keeps its
+    # warning, preserves November drawability and moves later event dates.
+    Set-CellValue $assumptions "D4" "Moderate Phase 7 covenant-linked no-waiver"
+    Set-CellValue $assumptions "D21" 0.20
+    Invoke-FullCalculation $excel
+    $improvedWarning = Find-FirstWarningOrBreachDate $covenants
+    $improvedBreach = Find-FirstCovenantBreachDate $covenants
+    $improvedShutoff = Find-FirstTextEventDate $debt "AD" "SHUTOFF" 12 47 "D"
+    $improvedFailure = Find-FirstPositiveEventDate $debt "AC" 12 47 "D"
+    if (
+        (Get-Number $covenants "H11") -ge (Get-Number $covenants "J11") -or
+        (Get-Text $covenants "L11") -ne "WARNING" -or
+        (Get-Text $debt "AD21") -ne "AVAILABLE" -or
+        (Get-Number $debt "P21") -le 0.000001 -or
+        $improvedBreach -le $originalBreach -or
+        $improvedShutoff -le $originalShutoff
+    ) {
+        throw "Improved covenant-linked case retained the stale October breach or November shutoff"
+    }
+    Assert-Near $improvedShutoff (Get-NextMonthEndSerial $improvedBreach) 0.000001 "Improved following-period shutoff"
+    Assert-SummaryEventDate $scenarioComparison "S5" $improvedWarning "Improved first warning"
+    Assert-SummaryEventDate $scenarioComparison "T5" $improvedBreach "Improved first breach"
+    Assert-SummaryEventDate $scenarioComparison "U5" $improvedShutoff "Improved first shutoff"
+    Assert-SummaryEventDate $scenarioComparison "V5" $improvedFailure "Improved first payment failure"
+    $improvedDrawControl = Assert-NoDrawsWhileShutoff $debt "Improved covenant-linked path"
+    $probeResults += [pscustomobject]@{ case = "covenant_linked_improvement"; status = "PASS"; max_identity_difference = (Assert-FinancingIdentities $debt "Covenant-linked improvement"); october_leverage = (Get-Number $covenants "H11"); october_limit = (Get-Number $covenants "J11"); october_status = (Get-Text $covenants "L11"); november_drawability = (Get-Text $debt "AD21"); november_draw = (Get-Number $debt "P21"); november_ending_cash = (Get-Number $debt "W21"); november_liquidity = (Get-Number $debt "AB21"); first_warning = $improvedWarning; first_breach = $improvedBreach; first_shutoff = $improvedShutoff; first_payment_failure = $(if ($null -eq $improvedFailure) { "N/D" } else { $improvedFailure }); draws_after_shutoff = $improvedDrawControl.draws }
+    Reset-ApprovedBase $excel $assumptions
+
+    # Q-009 deterioration: a supported adverse EBITDA edit advances breach and
+    # the following-period shutoff, with no new drawings during shutoff.
+    Set-CellValue $assumptions "D4" "Moderate Phase 7 covenant-linked no-waiver"
+    Set-CellValue $assumptions "D21" -0.10
+    Invoke-FullCalculation $excel
+    $adverseBreach = Find-FirstCovenantBreachDate $covenants
+    $adverseShutoff = Find-FirstTextEventDate $debt "AD" "SHUTOFF" 12 47 "D"
+    $adverseFailure = Find-FirstPositiveEventDate $debt "AC" 12 47 "D"
+    if ($adverseBreach -ge $originalBreach) { throw "Adverse EBITDA edit did not advance the covenant breach" }
+    Assert-Near $adverseShutoff (Get-NextMonthEndSerial $adverseBreach) 0.000001 "Adverse following-period shutoff"
+    Assert-SummaryEventDate $scenarioComparison "T5" $adverseBreach "Adverse first breach"
+    Assert-SummaryEventDate $scenarioComparison "U5" $adverseShutoff "Adverse first shutoff"
+    Assert-SummaryEventDate $scenarioComparison "V5" $adverseFailure "Adverse first payment failure"
+    $adverseDrawControl = Assert-NoDrawsWhileShutoff $debt "Adverse covenant-linked path"
+    $probeResults += [pscustomobject]@{ case = "covenant_linked_deterioration"; status = "PASS"; max_identity_difference = (Assert-FinancingIdentities $debt "Covenant-linked deterioration"); first_breach = $adverseBreach; first_shutoff = $adverseShutoff; first_payment_failure = $(if ($null -eq $adverseFailure) { "N/D" } else { $adverseFailure }); draws_after_shutoff = $adverseDrawControl.draws }
+    Reset-ApprovedBase $excel $assumptions
+
+    # Q-009 combined path: all advertised live inputs and event-linked financing
+    # must resolve to one internally consistent schedule.
+    Set-CellValue $assumptions "D4" "Moderate Phase 7 covenant-linked no-waiver"
+    Set-CellValue $assumptions "D18" 0.10
+    Set-CellValue $assumptions "D20" 0.01
+    Set-CellValue $assumptions "D21" -0.10
+    Set-CellValue $assumptions "D23" 10.0
+    Invoke-FullCalculation $excel
+    $combinedLinkedBreach = Find-FirstCovenantBreachDate $covenants
+    $combinedLinkedShutoff = Find-FirstTextEventDate $debt "AD" "SHUTOFF" 12 47 "D"
+    $combinedLinkedFailure = Find-FirstPositiveEventDate $debt "AC" 12 47 "D"
+    Assert-Near $combinedLinkedShutoff (Get-NextMonthEndSerial $combinedLinkedBreach) 0.000001 "Combined following-period shutoff"
+    Assert-SummaryEventDate $scenarioComparison "T5" $combinedLinkedBreach "Combined first breach"
+    Assert-SummaryEventDate $scenarioComparison "U5" $combinedLinkedShutoff "Combined first shutoff"
+    Assert-SummaryEventDate $scenarioComparison "V5" $combinedLinkedFailure "Combined first payment failure"
+    $combinedDrawControl = Assert-NoDrawsWhileShutoff $debt "Combined covenant-linked path"
+    $probeResults += [pscustomobject]@{ case = "covenant_linked_combined_inputs"; status = "PASS"; max_identity_difference = (Assert-FinancingIdentities $debt "Combined covenant-linked inputs"); q2_cfads_difference = ((Assert-Q2-Cfads $forecast $debt "Combined covenant-linked inputs") - (Get-Number $forecast "D22")); first_breach = $combinedLinkedBreach; first_shutoff = $combinedLinkedShutoff; first_payment_failure = $(if ($null -eq $combinedLinkedFailure) { "N/D" } else { $combinedLinkedFailure }); maturity_gap = (Get-Number $scenarioComparison "X5"); draws_after_shutoff = $combinedDrawControl.draws }
+    Reset-ApprovedBase $excel $assumptions
+
+    # Q-009 separate Phase 6 sensitivity: exogenous shutoff remains sourced from
+    # the approved analytical path and is not converted into covenant linkage.
+    Set-CellValue $assumptions "D4" "Moderate Phase 6 analytical shutoff"
+    Invoke-FullCalculation $excel
+    $phase6Shutoff = Find-FirstTextEventDate $debt "AD" "SHUTOFF" 12 47 "D"
+    Assert-Near $phase6Shutoff ([DateTime]"2026-11-30").ToOADate() 0.000001 "Phase 6 analytical shutoff"
+    Assert-SummaryEventDate $scenarioComparison "U5" $phase6Shutoff "Phase 6 analytical shutoff"
+    if ((Get-Text $debt "AD20") -ne "AVAILABLE" -or (Get-Text $debt "AD21") -ne "SHUTOFF") {
+        throw "Phase 6 analytical shutoff timing changed"
+    }
+    $phase6DrawControl = Assert-NoDrawsWhileShutoff $debt "Phase 6 analytical shutoff"
+    $probeResults += [pscustomobject]@{ case = "phase6_exogenous_shutoff"; status = "PASS"; max_identity_difference = (Assert-FinancingIdentities $debt "Phase 6 analytical shutoff"); first_shutoff = $phase6Shutoff; draws_after_shutoff = $phase6DrawControl.draws }
     Reset-ApprovedBase $excel $assumptions
 
     # Q-007 collision counterexample: term +5, contribution -7.5 and the

@@ -1,7 +1,7 @@
 validation_id,category,test_name,status,observed,expected
 P9V-001,checkpoint,approved Phase 8 ancestry,PASS,approved ancestor confirmed,1a23f7f1c393082329277bf4129ba31343f6cb87 is an ancestor
-P9V-002,checkpoint,Phase 8 normalized fingerprint recorded,PASS,a0c7329eca85e5d830e74394a9e7b72eacfc0aee3c93ee920901321397a6ed80,a0c7329eca85e5d830e74394a9e7b72eacfc0aee3c93ee920901321397a6ed80
-P9V-003,checkpoint,actual Phase 8 pre-overlay workbook identity,PASS,verified 7dbb608e30e40fa08283e60dd50981c983a475f9c6c03c6c0b52013eb4ecc720 at semantic fingerprint a0c7329eca85e5d830e74394a9e7b72eacfc0aee3c93ee920901321397a6ed80,PASS against current Phase 8 dynamic evidence
+P9V-002,checkpoint,Phase 8 normalized fingerprint recorded,PASS,a7165119347681df7facfd6f46f61634adee30c4d5487fe88fa9041aedb918db,a7165119347681df7facfd6f46f61634adee30c4d5487fe88fa9041aedb918db
+P9V-003,checkpoint,actual Phase 8 pre-overlay workbook identity,PASS,verified a41d124a00515251d114f52e651517663ed7ec15aec1919119371b2d8a4e64fb at semantic fingerprint a7165119347681df7facfd6f46f61634adee30c4d5487fe88fa9041aedb918db,PASS against current Phase 8 dynamic evidence
 P9V-004,recovery,six alternative recovery cases,PASS,6,6
 P9V-005,recovery,methods remain alternatives,PASS,"['asset_realization', 'going_concern']",two separate methods
 P9V-006,recovery,same recovery date and scenario,PASS,checked,2027-12-31 severe
@@ -30,7 +30,7 @@ P9V-028,workbook,LibreOffice engine,PASS,LibreOffice 26.8.0.3,LibreOffice 26.8.0
 P9V-029,workbook,workbook saved Base,PASS,Base,Base
 P9V-030,workbook,Phase 9 terminal checks,PASS,0,0
 P9V-031,workbook,recovery parity,PASS,0,0
-P9V-032,workbook,dynamic recovery tests,PASS,73 required dynamic recovery cases passed under P9-DYNAMIC-3.0,PASS with separately identifiable evidence
+P9V-032,workbook,dynamic recovery tests,PASS,77 required dynamic recovery cases passed under P9-DYNAMIC-3.0,PASS with separately identifiable evidence
 P9V-033,workbook,14-sheet order,PASS,14,14
 P9V-034,workbook,Checks G20 compatibility,PASS,0,0
 P9V-035,workbook,no external workbook links,PASS,0,0

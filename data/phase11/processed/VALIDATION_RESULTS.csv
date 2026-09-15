@@ -27,9 +27,9 @@ P11V-025,README,AI assistance and owner validation accurately separated,PASS,che
 P11V-026,README,full disclosure link present,PASS,checked,present
 P11V-027,README,reproducibility bounded to tested toolchain,PASS,checked,tested environment stated
 P11V-028,links,all internal links resolve,PASS,0,0
-P11V-029,workbook,approved raw SHA,PASS,6e31a259aebe14b4e9a379348d4b686f6a1148a6db743c72646a783321167454,6e31a259aebe14b4e9a379348d4b686f6a1148a6db743c72646a783321167454
-P11V-030,workbook,approved size,PASS,301362,301362
-P11V-031,workbook,approved normalized fingerprint,PASS,4d927e955f1cc9ede829aab41b26e43f62cfe23812d5018f54c12b73028b923a,4d927e955f1cc9ede829aab41b26e43f62cfe23812d5018f54c12b73028b923a
+P11V-029,workbook,approved raw SHA,PASS,34c511280b27ecbe4eca0ebdf1a772b1e975a45b4ee965081f6cb32368b1ad52,34c511280b27ecbe4eca0ebdf1a772b1e975a45b4ee965081f6cb32368b1ad52
+P11V-030,workbook,approved size,PASS,302919,302919
+P11V-031,workbook,approved normalized fingerprint,PASS,49acaabf9860f638e42af6a7ed62d6557b5068e05a4f10a0d5e4871b7d8cc804,49acaabf9860f638e42af6a7ed62d6557b5068e05a4f10a0d5e4871b7d8cc804
 P11V-032,workbook,approved structure,PASS,14/3473/7,14/3473/7
 P11V-033,workbook,Base saved and no external links or formula errors,PASS,Base/0/0,Base/0/0
 P11V-034,PDF,credit memo approved,PASS,dea0465ae7ee29be0c993c1ac4f57ac396b872763b2c657fded1edcb9c5e95b8/11,dea0465ae7ee29be0c993c1ac4f57ac396b872763b2c657fded1edcb9c5e95b8/11
@@ -52,5 +52,5 @@ P11V-050,repository,no absolute local paths,PASS,,none
 P11V-051,repository,no credentials,PASS,,none
 P11V-052,scope,Phase 12 absent,PASS,,none
 P11V-053,scope,dirty-tree changes match explicit overlay manifest,PASS,missing=[];unexpected=[],exact declared overlay
-P11V-054,scope,no inferred working-tree exceptions,PASS,5,clean tree or explicit overlay
+P11V-054,scope,no inferred working-tree exceptions,PASS,29,clean tree or explicit overlay
 P11V-055,git,nothing staged,PASS,,none

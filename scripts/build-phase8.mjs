@@ -124,6 +124,14 @@ function lookupScenarioMeta(returnCol, scenarioCell) {
   return `=INDEX('Assumptions'!$${returnCol}$41:$${returnCol}$49,MATCH(${scenarioCell},'Assumptions'!$BD$41:$BD$49,0))`;
 }
 
+function firstMatchingDateFormula(sheet, dateColumn, firstRow, lastRow, condition) {
+  let expression = '"N/D"';
+  for (let row = lastRow; row >= firstRow; row -= 1) {
+    expression = `IF(${condition(row)},'${sheet}'!$${dateColumn}$${row},${expression})`;
+  }
+  return `=${expression}`;
+}
+
 function setWidths(sheet, widths) {
   for (const [column, width] of Object.entries(widths)) sheet.getRange(`${column}:${column}`).format.columnWidth = width;
 }
@@ -433,6 +441,7 @@ async function buildWorkbook() {
   const quarterRows = periodInputs.filter(r => r.scenario_name === "Base" && (r.frequency === "quarterly" || ["2026-04-30", "2026-07-31", "2026-10-31", "2027-01-31", "2027-04-30", "2027-07-31", "2027-10-31", "2028-01-31"].includes(r.period_end)));
   const quarters = [];
   for (const row of quarterRows) if (!quarters.some(x => x.period_end === row.period_end)) quarters.push(row);
+  const covenantDates = ["2026-01-31", ...quarters.slice(0, 19).map(r => r.period_end)];
   headers(f, "C7:W7", ["Metric", ...quarters.map(row => `${row.quarter}:${row.fiscal_year.slice(-2)}`)]);
   f.getRange("D8:W8").values = [quarters.map(row => excelDate(row.period_end))]; dateFmt(f.getRange("D8:W8"));
   const forecastLabels = ["Revenue", "Gross margin", "Gross profit", "Cash operating expenses", "Lender-base EBITDA", "EBITDA margin", "Depreciation and amortization", "Operating profit", "Cash taxes", "Working-capital cash flow", "Capital expenditures", "Other operating cash uses", "CFADS before cash interest", "Cash interest", "CFO proxy", "Free cash flow proxy", "Distributions", "Cash available before financing", "Source IDs"];
@@ -493,6 +502,13 @@ async function buildWorkbook() {
     const estimatedCashBeforeRevolver = `(${openingCash}+I${row}-${preliminaryInterest}-AI${row}-AG${row}-${distributions})`;
     const cashAfterRevolver = `(AM${row}+P${row}-Q${row})`;
     const revolverBeforeMaturity = `(O${row}+P${row}-Q${row})`;
+    const priorCovenantCount = covenantDates.filter(date => date < p.period_end).length;
+    const priorCovenantEndRow = 7 + priorCovenantCount;
+    const liveCovenantShutoff = priorCovenantCount === 0
+      ? "FALSE"
+      : `OR(COUNTIF('Covenants'!$L$8:$L$${priorCovenantEndRow},"BREACH")>0,COUNTIF('Covenants'!$R$8:$R$${priorCovenantEndRow},"BREACH")>0,COUNTIF('Covenants'!$T$8:$T$${priorCovenantEndRow},"BREACH")>0)`;
+    const covenantLinkedPath = `RIGHT('Assumptions'!$D$5,26)="_PHASE7_COVENANT_NO_WAIVER"`;
+    const storedActiveShutoff = `COUNTIFS('Assumptions'!$C$41:$C$364,$D$4,'Assumptions'!$E$41:$E$364,$C${row},'Assumptions'!$AR$41:$AR$364,"*_shutoff_active")>0`;
     const approvedPath = "AND('Assumptions'!$D$12=635,'Assumptions'!$D$13=15,'Assumptions'!$D$14=300,'Assumptions'!$D$16=6.2,'Assumptions'!$D$17=62.619,'Assumptions'!$D$18=7.5%,'Assumptions'!$D$19=6.57%,'Assumptions'!$D$20=0,'Assumptions'!$D$21=0,'Assumptions'!$D$23=0,'Assumptions'!$D$24=25,'Assumptions'!$D$25=0,'Assumptions'!$D$26=50%,'Assumptions'!$D$31=50,'Assumptions'!$D$35=DATE(2031,1,31),'Assumptions'!$D$4<>\"Moderate Phase 7 covenant-linked no-waiver\",'Assumptions'!$D$4<>\"Severe Phase 7 covenant-linked no-waiver\")";
     const preserveApproved = (approved, live) => `=IF(${approvedPath},${approved},${live})`;
     const formulas = [
@@ -515,7 +531,7 @@ async function buildWorkbook() {
       preserveApproved(source("AQ"), `IF(D${row}>='Assumptions'!$D$35,0,MAX(0,'Assumptions'!$D$14-'Assumptions'!$D$16-R${row}))`),
       preserveApproved(source("AO"), `MAX(0,W${row}-'Assumptions'!$D$24)+IF(AD${row}=\"AVAILABLE\",AA${row},0)`),
       preserveApproved(`(${source("AM")}+MAX(0,-${source("V")}))`, `AF${row}+AH${row}+AJ${row}+MAX(0,-W${row})`),
-      `=IF(D${row}>='Assumptions'!$D$35,\"MATURITY\",IF(COUNTIFS('Assumptions'!$C$41:$C$364,$D$4,'Assumptions'!$E$41:$E$364,$C${row},'Assumptions'!$AR$41:$AR$364,\"*shutoff*\")>0,\"SHUTOFF\",\"AVAILABLE\"))`,
+      `=IF(D${row}>='Assumptions'!$D$35,\"MATURITY\",IF(${covenantLinkedPath},IF(${liveCovenantShutoff},\"SHUTOFF\",\"AVAILABLE\"),IF(${storedActiveShutoff},\"SHUTOFF\",\"AVAILABLE\")))`,
       preserveApproved(source("AH"), `IF('Assumptions'!$D$19=\"\",\"\",IF(${rawAvg}=0,0,MAX(0,${source("AH")}*${liveRate}/6.57%*${liveAverage}/${rawAvg})))`),
       preserveApproved(`MAX(0,${source("AH")}-${source("AI")})`, `MAX(0,AE${row}-T${row})`),
       preserveApproved(source("X"), `${source("X")}*('Assumptions'!$D$12/635)*('Assumptions'!$D$18/7.5%)`),
@@ -579,7 +595,6 @@ async function buildWorkbook() {
   cv.getRange("C5").values = [["Public-information calculations are not official compliance certificates. Gross leverage assumes zero covenant cash netting. Book-cash net leverage is diagnostic only."]];
   cv.getRange("C5:AF5").format = { fill: COLORS.warning, font: { name: FONT, italic: true, color: "#7F6000" }, wrapText: false, rowHeight: 24 };
   headers(cv, "C7:AF7", ["Period end", "Fiscal year", "Quarter", "Gross funded debt", "LTM lender EBITDA", "Gross leverage", "Leverage display", "Covenant maximum", "Analyst warning", "Leverage status", "LTM cash interest due / payable", "Coverage", "Coverage display", "Coverage minimum", "Coverage warning", "Coverage status", "Usable liquidity", "Liquidity status", "Overall warning", "Overall covenant", "Drawability", "Completeness", "Operating cash", "Cash floor", "Unpaid obligations", "Maturity gap", "Leverage ratio headroom", "Leverage debt headroom", "Break-even EBITDA", "Coverage earnings cushion"]);
-  const covenantDates = ["2026-01-31", ...quarters.slice(0, 19).map(r => r.period_end)];
   for (let i = 0; i < covenantDates.length; i += 1) {
     const row = 8 + i, dt = covenantDates[i]; const isClosing = i === 0;
     cv.getRange(`C${row}:E${row}`).values = [[excelDate(dt), isClosing ? "FY2025" : quarters[i - 1].fiscal_year, isClosing ? "Closing" : quarters[i - 1].quarter]];
@@ -624,10 +639,14 @@ async function buildWorkbook() {
   section(sc, "C6:Y6", "Current selected-case results");
   headers(sc, "C4:Y4", ["View", "Scenario ID", "Status", "FY2026 post-closing nine-month EBITDA (Feb. 1-Oct. 31, 2026)", "EBITDA margin", "Modeled operating cash", "CFADS", "Cash interest paid", "Scheduled principal paid", "ECF sweep", "Peak revolver", "Opening liquidity", "Subsequent minimum", "All-in minimum", "Maximum quarterly-test leverage", "Minimum coverage", "First warning", "First breach", "First draw shutoff", "First payment failure", "Common-horizon ending debt", "Maturity gap", "Unpaid obligations"]);
   sc.getRange("C5:E5").formulas = [["=\"LIVE\"", "='Assumptions'!D5", "=\"Current selection\""]];
+  const firstWarning = firstMatchingDateFormula("Covenants", "C", 8, 27, row => `OR('Covenants'!$U$${row}=\"WARNING\",'Covenants'!$L$${row}=\"BREACH\",'Covenants'!$R$${row}=\"BREACH\",'Covenants'!$T$${row}=\"BREACH\")`);
+  const firstBreach = firstMatchingDateFormula("Covenants", "C", 8, 27, row => `OR('Covenants'!$L$${row}=\"BREACH\",'Covenants'!$R$${row}=\"BREACH\",'Covenants'!$T$${row}=\"BREACH\")`);
+  const firstShutoff = firstMatchingDateFormula("Debt Schedule", "D", 12, 47, row => `'Debt Schedule'!$AD$${row}=\"SHUTOFF\"`);
+  const firstPaymentFailure = firstMatchingDateFormula("Debt Schedule", "D", 12, 47, row => `'Debt Schedule'!$AC$${row}>0.000001`);
   sc.getRange("F5:Y5").formulas = [[
     "=SUM('Forecast'!D14:F14)", "=SUM('Forecast'!D14:F14)/SUM('Forecast'!D10:F10)", "=SUM('Forecast'!D24:W24)", "=SUM('Forecast'!D22:W22)", "=SUM('Debt Schedule'!T12:T47)", "=SUM('Debt Schedule'!K12:K47)", "=SUM('Debt Schedule'!L12:L47)", "=MAX('Transaction'!$D$9,MAX('Debt Schedule'!R12:R47))",
     "='Liquidity'!D6", "='Liquidity'!D7", "='Liquidity'!D9", "=MAX('Covenants'!H8:H27)", "=MIN('Covenants'!N8:N27)",
-    lookupScenarioMeta("BF", "'Assumptions'!$D$4"), lookupScenarioMeta("BG", "'Assumptions'!$D$4"), lookupScenarioMeta("BH", "'Assumptions'!$D$4"), lookupScenarioMeta("BI", "'Assumptions'!$D$4"),
+    firstWarning, firstBreach, firstShutoff, firstPaymentFailure,
     "=SUMIFS('Debt Schedule'!Z12:Z47,'Debt Schedule'!D12:D47,DATE(2029,7,31))", "='Debt Schedule'!X47", "=SUM('Debt Schedule'!AC12:AC47)",
   ]];
   crossFormula(sc.getRange("C5:Y5")); money(sc.getRange("F5:F5")); percent(sc.getRange("G5")); money(sc.getRange("H5:P5")); ratio(sc.getRange("Q5:R5")); money(sc.getRange("W5:Y5")); dateFmt(sc.getRange("S5:V5"));

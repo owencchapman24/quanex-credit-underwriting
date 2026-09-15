@@ -281,6 +281,64 @@ def dynamic_tests(document, desktop, workbook: Path) -> tuple[dict[str, object],
         observed = q2_cfads()
         add(name, abs(observed[2]) <= 0.000001, observed)
 
+    def first_text_event_date(
+        sheet: str, status_column: str, expected: str,
+        first_row: int, last_row: int, date_column: str,
+    ) -> float | None:
+        for row in range(first_row, last_row + 1):
+            if cell_value(document, sheet, f"{status_column}{row}") == expected:
+                return number(sheet, f"{date_column}{row}")
+        return None
+
+    def first_warning_or_breach_date() -> float | None:
+        for row in range(8, 28):
+            if (
+                cell_value(document, "Covenants", f"U{row}") == "WARNING"
+                or cell_value(document, "Covenants", f"L{row}") == "BREACH"
+                or cell_value(document, "Covenants", f"R{row}") == "BREACH"
+                or cell_value(document, "Covenants", f"T{row}") == "BREACH"
+            ):
+                return number("Covenants", f"C{row}")
+        return None
+
+    def first_covenant_breach_date() -> float | None:
+        for row in range(8, 28):
+            if any(
+                cell_value(document, "Covenants", f"{column}{row}") == "BREACH"
+                for column in ("L", "R", "T")
+            ):
+                return number("Covenants", f"C{row}")
+        return None
+
+    def first_positive_event_date(
+        sheet: str, value_column: str, first_row: int, last_row: int, date_column: str,
+    ) -> float | None:
+        for row in range(first_row, last_row + 1):
+            if number(sheet, f"{value_column}{row}") > 0.000001:
+                return number(sheet, f"{date_column}{row}")
+        return None
+
+    def next_debt_period_after(serial: float) -> float:
+        for row in range(12, 48):
+            period_end = number("Debt Schedule", f"D{row}")
+            if period_end > serial:
+                return period_end
+        raise ValueError(f"No modeled debt period follows event date {serial}")
+
+    def summary_event_matches(address: str, expected: float | None) -> bool:
+        actual = cell_value(document, "Scenario Comparison", address)
+        if expected is None:
+            return actual == "N/D"
+        return isinstance(actual, (int, float)) and abs(float(actual) - expected) <= 0.000001
+
+    def shutoff_draw_control() -> tuple[list[int], float]:
+        rows = [
+            row for row in range(12, 48)
+            if cell_value(document, "Debt Schedule", f"AD{row}") == "SHUTOFF"
+        ]
+        draws = sum(number("Debt Schedule", f"P{row}") for row in rows)
+        return rows, draws
+
     # Do not write the selector when the saved workbook is already in Base.
     # LibreOffice invalidates the full selected-scenario dependency tree even
     # for a no-op string write, which can make the following independent live
@@ -428,7 +486,18 @@ def dynamic_tests(document, desktop, workbook: Path) -> tuple[dict[str, object],
         number("Debt Schedule", f"{column}{row}")
         for row in range(12, 48) for column in ("AF", "AH", "AJ")
     )
-    add("tight-liquidity case preserves due versus paid shortfalls", tight_shortfall > 0.001, tight_shortfall)
+    tight_failure = first_positive_event_date("Debt Schedule", "AC", 12, 47, "D")
+    add(
+        "tight-liquidity case preserves due versus paid shortfalls",
+        tight_shortfall > 0.001
+        and tight_failure is not None
+        and summary_event_matches("V5", tight_failure),
+        {
+            "mandatory_shortfall": tight_shortfall,
+            "first_payment_failure": tight_failure,
+            "summary_first_payment_failure": cell_value(document, "Scenario Comparison", "V5"),
+        },
+    )
     add_identity_test("Tight-liquidity case period identities reconcile")
     reset_document()
     base_sweep = float(cell_value(document, "Scenario Comparison", "L5")); set_cell(document, "Assumptions", "D26", 0); document.calculateAll()
@@ -486,23 +555,177 @@ def dynamic_tests(document, desktop, workbook: Path) -> tuple[dict[str, object],
 
     reset_document()
     set_cell(document, "Assumptions", "D4", "Moderate Phase 7 covenant-linked no-waiver"); document.calculateAll()
-    add("covenant-linked draw shutoff is visible", str(cell_value(document, "Scenario Comparison", "U5")) not in {"", "N/D"}, cell_value(document, "Scenario Comparison", "U5"))
-    shutoff_rows = [
-        row for row in range(12, 48)
-        if cell_value(document, "Debt Schedule", f"AD{row}") == "SHUTOFF"
-    ]
-    first_shutoff = min(shutoff_rows) if shutoff_rows else None
-    same_period_draw = number("Debt Schedule", f"P{first_shutoff}") if first_shutoff else 0.0
-    post_shutoff_draws = sum(
-        number("Debt Schedule", f"P{row}") for row in shutoff_rows
-        if first_shutoff is not None and row > first_shutoff
+    original_warning = first_warning_or_breach_date()
+    original_breach = first_covenant_breach_date()
+    original_shutoff = first_text_event_date("Debt Schedule", "AD", "SHUTOFF", 12, 47, "D")
+    original_failure = first_positive_event_date("Debt Schedule", "AC", 12, 47, "D")
+    shutoff_rows, post_shutoff_draws = shutoff_draw_control()
+    add(
+        "covenant-linked draw shutoff is visible",
+        original_shutoff is not None
+        and original_breach is not None
+        and abs(original_shutoff - next_debt_period_after(original_breach)) <= 0.000001
+        and summary_event_matches("S5", original_warning)
+        and summary_event_matches("T5", original_breach)
+        and summary_event_matches("U5", original_shutoff)
+        and summary_event_matches("V5", original_failure),
+        {
+            "first_warning": original_warning,
+            "first_breach": original_breach,
+            "first_shutoff": original_shutoff,
+            "first_payment_failure": original_failure,
+        },
     )
     add(
         "no-waiver shutoff prevents new revolver draws",
-        bool(shutoff_rows) and abs(post_shutoff_draws) <= 0.000001,
-        (first_shutoff, same_period_draw, post_shutoff_draws),
+        bool(shutoff_rows)
+        and cell_value(document, "Debt Schedule", "AD20") == "AVAILABLE"
+        and cell_value(document, "Debt Schedule", "AD21") == "SHUTOFF"
+        and abs(post_shutoff_draws) <= 0.000001,
+        (shutoff_rows[0] if shutoff_rows else None, post_shutoff_draws),
     )
     add_identity_test("No-waiver stress period identities reconcile")
+
+    reset_document()
+    set_cell(document, "Assumptions", "D4", "Moderate Phase 7 covenant-linked no-waiver")
+    set_cell(document, "Assumptions", "D21", 0.20)
+    document.calculateAll()
+    improved_warning = first_warning_or_breach_date()
+    improved_breach = first_covenant_breach_date()
+    improved_shutoff = first_text_event_date("Debt Schedule", "AD", "SHUTOFF", 12, 47, "D")
+    improved_failure = first_positive_event_date("Debt Schedule", "AC", 12, 47, "D")
+    improved_shutoff_rows, improved_shutoff_draws = shutoff_draw_control()
+    improved_identities = financial_identities()
+    improvement_observed = {
+        "october_leverage": cell_value(document, "Covenants", "H11"),
+        "october_limit": cell_value(document, "Covenants", "J11"),
+        "october_status": cell_value(document, "Covenants", "L11"),
+        "november_drawability": cell_value(document, "Debt Schedule", "AD21"),
+        "november_draw": cell_value(document, "Debt Schedule", "P21"),
+        "november_ending_cash": cell_value(document, "Debt Schedule", "W21"),
+        "november_liquidity": cell_value(document, "Debt Schedule", "AB21"),
+        "first_warning": improved_warning,
+        "first_breach": improved_breach,
+        "first_shutoff": improved_shutoff,
+        "first_payment_failure": improved_failure,
+        "shutoff_draws": improved_shutoff_draws,
+        "identities": improved_identities,
+    }
+    add(
+        "covenant-linked EBITDA improvement moves breach, shutoff and financing",
+        original_breach is not None
+        and original_shutoff is not None
+        and improved_breach is not None
+        and improved_shutoff is not None
+        and number("Covenants", "H11") < number("Covenants", "J11")
+        and cell_value(document, "Covenants", "L11") == "WARNING"
+        and cell_value(document, "Debt Schedule", "AD21") == "AVAILABLE"
+        and number("Debt Schedule", "P21") > 0.000001
+        and improved_breach > original_breach
+        and improved_shutoff > original_shutoff
+        and abs(improved_shutoff - next_debt_period_after(improved_breach)) <= 0.000001
+        and summary_event_matches("S5", improved_warning)
+        and summary_event_matches("T5", improved_breach)
+        and summary_event_matches("U5", improved_shutoff)
+        and summary_event_matches("V5", improved_failure)
+        and bool(improved_shutoff_rows)
+        and abs(improved_shutoff_draws) <= 0.000001
+        and "error" not in improved_identities
+        and all(float(value) <= 0.000001 for value in improved_identities.values()),
+        improvement_observed,
+    )
+
+    reset_document()
+    set_cell(document, "Assumptions", "D4", "Moderate Phase 7 covenant-linked no-waiver")
+    set_cell(document, "Assumptions", "D21", -0.10)
+    document.calculateAll()
+    adverse_breach = first_covenant_breach_date()
+    adverse_shutoff = first_text_event_date("Debt Schedule", "AD", "SHUTOFF", 12, 47, "D")
+    adverse_failure = first_positive_event_date("Debt Schedule", "AC", 12, 47, "D")
+    adverse_shutoff_rows, adverse_shutoff_draws = shutoff_draw_control()
+    adverse_identities = financial_identities()
+    add(
+        "covenant-linked deterioration advances breach and shutoff",
+        original_breach is not None
+        and adverse_breach is not None
+        and adverse_shutoff is not None
+        and adverse_breach < original_breach
+        and abs(adverse_shutoff - next_debt_period_after(adverse_breach)) <= 0.000001
+        and summary_event_matches("T5", adverse_breach)
+        and summary_event_matches("U5", adverse_shutoff)
+        and summary_event_matches("V5", adverse_failure)
+        and bool(adverse_shutoff_rows)
+        and abs(adverse_shutoff_draws) <= 0.000001
+        and "error" not in adverse_identities
+        and all(float(value) <= 0.000001 for value in adverse_identities.values()),
+        {
+            "first_breach": adverse_breach,
+            "first_shutoff": adverse_shutoff,
+            "first_payment_failure": adverse_failure,
+            "shutoff_draws": adverse_shutoff_draws,
+            "identities": adverse_identities,
+        },
+    )
+
+    reset_document()
+    set_cell(document, "Assumptions", "D4", "Moderate Phase 7 covenant-linked no-waiver")
+    set_cell(document, "Assumptions", "D18", 0.10)
+    set_cell(document, "Assumptions", "D20", 0.01)
+    set_cell(document, "Assumptions", "D21", -0.10)
+    set_cell(document, "Assumptions", "D23", 10)
+    document.calculateAll()
+    combined_breach = first_covenant_breach_date()
+    combined_shutoff = first_text_event_date("Debt Schedule", "AD", "SHUTOFF", 12, 47, "D")
+    combined_failure = first_positive_event_date("Debt Schedule", "AC", 12, 47, "D")
+    combined_shutoff_rows, combined_shutoff_draws = shutoff_draw_control()
+    combined_identities = financial_identities()
+    combined_q2 = q2_cfads()
+    add(
+        "combined live inputs preserve event and financing coherence",
+        combined_breach is not None
+        and combined_shutoff is not None
+        and abs(combined_shutoff - next_debt_period_after(combined_breach)) <= 0.000001
+        and summary_event_matches("T5", combined_breach)
+        and summary_event_matches("U5", combined_shutoff)
+        and summary_event_matches("V5", combined_failure)
+        and bool(combined_shutoff_rows)
+        and abs(combined_shutoff_draws) <= 0.000001
+        and abs(combined_q2[2]) <= 0.000001
+        and "error" not in combined_identities
+        and all(float(value) <= 0.000001 for value in combined_identities.values()),
+        {
+            "first_breach": combined_breach,
+            "first_shutoff": combined_shutoff,
+            "first_payment_failure": combined_failure,
+            "maturity_gap": cell_value(document, "Scenario Comparison", "X5"),
+            "q2_cfads": combined_q2,
+            "shutoff_draws": combined_shutoff_draws,
+            "identities": combined_identities,
+        },
+    )
+
+    reset_document()
+    set_cell(document, "Assumptions", "D4", "Moderate Phase 6 analytical shutoff")
+    document.calculateAll()
+    phase6_shutoff = first_text_event_date("Debt Schedule", "AD", "SHUTOFF", 12, 47, "D")
+    phase6_shutoff_rows, phase6_shutoff_draws = shutoff_draw_control()
+    phase6_identities = financial_identities()
+    add(
+        "Phase 6 exogenous shutoff remains independent",
+        phase6_shutoff is not None
+        and cell_value(document, "Debt Schedule", "AD20") == "AVAILABLE"
+        and cell_value(document, "Debt Schedule", "AD21") == "SHUTOFF"
+        and summary_event_matches("U5", phase6_shutoff)
+        and bool(phase6_shutoff_rows)
+        and abs(phase6_shutoff_draws) <= 0.000001
+        and "error" not in phase6_identities
+        and all(float(value) <= 0.000001 for value in phase6_identities.values()),
+        {
+            "first_shutoff": phase6_shutoff,
+            "shutoff_draws": phase6_shutoff_draws,
+            "identities": phase6_identities,
+        },
+    )
 
     reset_document()
     restored = tuple(cell_value(document, "Scenario Comparison", address) for address in ("F5", "I5", "J5", "L5", "P5", "Q5", "X5"))

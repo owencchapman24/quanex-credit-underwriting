@@ -196,7 +196,24 @@ class Phase8WorkbookTests(unittest.TestCase):
         for address in ("I12", "P12", "T12", "U12", "K12", "V12", "Q12", "L12", "M12", "W12"):
             self.assertIn(address, cash_identity)
 
-    def test_11c_due_paid_and_shortfall_columns_are_distinct(self) -> None:
+    def test_11c_covenant_linked_event_state_is_live_and_follows_the_test_period(self) -> None:
+        february = self.formula("Debt Schedule", "AD12")
+        november = self.formula("Debt Schedule", "AD21")
+        self.assertIn('RIGHT(', november)
+        self.assertIn('"_PHASE7_COVENANT_NO_WAIVER"', november)
+        for column in ("L", "R", "T"):
+            self.assertIn(f"${column}$8:${column}$11", november)
+            self.assertIn(f"COUNTIF(Covenants!${column}$8", february)
+        self.assertIn('"*_shutoff_active"', november)
+        self.assertNotIn('"*shutoff*"', november)
+        self.assertIn("Covenants", self.formula("Scenario Comparison", "S5"))
+        self.assertIn("Covenants", self.formula("Scenario Comparison", "T5"))
+        self.assertIn("Debt Schedule", self.formula("Scenario Comparison", "U5"))
+        self.assertIn("Debt Schedule", self.formula("Scenario Comparison", "V5"))
+        for address in ("S5", "T5", "U5", "V5"):
+            self.assertNotIn("Assumptions!$B", self.formula("Scenario Comparison", address))
+
+    def test_11d_due_paid_and_shortfall_columns_are_distinct(self) -> None:
         interest_due = self.formula("Debt Schedule", "AE12")
         self.assertIn("AH", interest_due)
         self.assertIn("O12+O12", interest_due)
@@ -209,7 +226,7 @@ class Phase8WorkbookTests(unittest.TestCase):
         self.assertIn("Debt Schedule'!$T$12:$T$47", self.formula("Forecast", "D23"))
         self.assertIn("period-end draws and repayments affect later periods", "\n".join(self.shared))
 
-    def test_11d_post_closing_ebitda_period_is_explicit(self) -> None:
+    def test_11e_post_closing_ebitda_period_is_explicit(self) -> None:
         text = "\n".join(self.shared)
         self.assertIn("FY2026 post-closing nine-month EBITDA (Feb. 1-Oct. 31, 2026)", text)
         self.assertIn("FY2026 post-closing nine-month lender-base EBITDA (Feb. 1-Oct. 31, 2026)", text)

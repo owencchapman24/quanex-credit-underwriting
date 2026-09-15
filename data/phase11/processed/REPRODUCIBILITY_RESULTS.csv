@@ -1,15 +1,15 @@
 reproducibility_id,test_name,status,observed,expected,verification_mode,notes
 P11R-001,verification mode explicit,PASS,precommit_overlay_review,clean_release or precommit_overlay_review,precommit_overlay_review,No new analytical evidence; pre-commit overlay review is not clean-release verification.
-P11R-002,selected commit resolved exactly,PASS,131d03c5babb892f224171da7d1a8f1eda5049e4,131d03c5babb892f224171da7d1a8f1eda5049e4,precommit_overlay_review,No new analytical evidence; pre-commit overlay review is not clean-release verification.
+P11R-002,selected commit resolved exactly,PASS,e7d42a2553cadd27555d21898311d87a79d64441,e7d42a2553cadd27555d21898311d87a79d64441,precommit_overlay_review,No new analytical evidence; pre-commit overlay review is not clean-release verification.
 P11R-003,disposable clone has independent Git metadata,PASS,True,True,precommit_overlay_review,No new analytical evidence; pre-commit overlay review is not clean-release verification.
 P11R-004,disposable clone uses no hardlinks,PASS,True,True,precommit_overlay_review,No new analytical evidence; pre-commit overlay review is not clean-release verification.
 P11R-005,core.autocrlf false before initial checkout,PASS,false,false,precommit_overlay_review,No new analytical evidence; pre-commit overlay review is not clean-release verification.
 P11R-006,canonical Phase 3 bytes preserved,PASS,7,7 exact paths unchanged,precommit_overlay_review,No new analytical evidence; pre-commit overlay review is not clean-release verification.
-P11R-007,overlay inventory matches verification mode,PASS,2,2,precommit_overlay_review,No new analytical evidence; pre-commit overlay review is not clean-release verification.
+P11R-007,overlay inventory matches verification mode,PASS,25,25,precommit_overlay_review,No new analytical evidence; pre-commit overlay review is not clean-release verification.
 P11R-008,fresh validation outputs compared before later overwrite,PASS,6,6 step-specific comparisons,precommit_overlay_review,No new analytical evidence; pre-commit overlay review is not clean-release verification.
 P11R-009,validation snapshots restored,PASS,0,0,precommit_overlay_review,No new analytical evidence; pre-commit overlay review is not clean-release verification.
 P11R-010,analytical reproduction required no network,PASS,0,0,precommit_overlay_review,No new analytical evidence; pre-commit overlay review is not clean-release verification.
 P11R-011,deterministic artifacts exact,PASS,0,0,precommit_overlay_review,No new analytical evidence; pre-commit overlay review is not clean-release verification.
-P11R-012,workbook normalized fingerprint,PASS,4d927e955f1cc9ede829aab41b26e43f62cfe23812d5018f54c12b73028b923a,4d927e955f1cc9ede829aab41b26e43f62cfe23812d5018f54c12b73028b923a,precommit_overlay_review,No new analytical evidence; pre-commit overlay review is not clean-release verification.
+P11R-012,workbook normalized fingerprint,PASS,49acaabf9860f638e42af6a7ed62d6557b5068e05a4f10a0d5e4871b7d8cc804,49acaabf9860f638e42af6a7ed62d6557b5068e05a4f10a0d5e4871b7d8cc804,precommit_overlay_review,No new analytical evidence; pre-commit overlay review is not clean-release verification.
 P11R-013,workbook semantic differences,PASS,0,0,precommit_overlay_review,No new analytical evidence; pre-commit overlay review is not clean-release verification.
 P11R-014,disposable clone cleanup,PASS,disposable local no-hardlinks clone,temporary clone removed,precommit_overlay_review,No new analytical evidence; pre-commit overlay review is not clean-release verification.

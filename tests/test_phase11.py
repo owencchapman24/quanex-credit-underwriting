@@ -43,6 +43,8 @@ def valid_excel_phase8_report() -> dict[str, object]:
         "fy2026_q2_ebitda_plus_10_percent", "dso_plus_10_days",
         "combined_rate_amortization_ebitda_dso", "tight_liquidity",
         "no_waiver_stress",
+        "covenant_linked_improvement", "covenant_linked_deterioration",
+        "covenant_linked_combined_inputs", "phase6_exogenous_shutoff",
     }
     probes: list[dict[str, object]] = []
     for case in sorted(phase11.EXCEL_PHASE8_REQUIRED_PROBE_CASES):
@@ -548,7 +550,7 @@ class Phase11ReleaseTests(unittest.TestCase):
     def test_phase8_excel_gate_requires_complete_unique_executed_probes(self) -> None:
         report = valid_excel_phase8_report()
         summary = phase11.validate_phase8_excel_report(report)
-        self.assertEqual(summary["probe_count"], 10)
+        self.assertEqual(summary["probe_count"], 14)
         self.assertEqual(summary["maximum_identity_difference"], 0.0)
         self.assertEqual(summary["maximum_reconciliation_difference"], 0.0)
 

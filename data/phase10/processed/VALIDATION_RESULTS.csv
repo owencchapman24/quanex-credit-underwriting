@@ -12,8 +12,8 @@ P10V-010,recommendation,missing source not debt funded,PASS,checked,no increment
 P10V-011,data,committee metric count,PASS,150,>=130
 P10V-012,data,metric identifiers unique,PASS,150,150
 P10V-013,data,all metric lineage complete,PASS,checked,complete
-P10V-014,workbook,Phase 10 final artifact phase8 dynamic evidence,PASS,PASS: 60 required dynamic cases passed under P8-DYNAMIC-2.0,PASS; complete exact registry tied to the current final workbook
-P10V-015,workbook,Phase 10 final artifact phase9 dynamic evidence,PASS,PASS: 73 required dynamic recovery cases passed under P9-DYNAMIC-3.0,PASS; complete exact registry tied to the current final workbook
+P10V-014,workbook,Phase 10 final artifact phase8 dynamic evidence,PASS,PASS: 64 required dynamic cases passed under P8-DYNAMIC-2.1,PASS; complete exact registry tied to the current final workbook
+P10V-015,workbook,Phase 10 final artifact phase9 dynamic evidence,PASS,PASS: 77 required dynamic recovery cases passed under P9-DYNAMIC-3.0,PASS; complete exact registry tied to the current final workbook
 P10V-016,numerical,anchor lender_base_ebitda FY2024,PASS,179.358,179.358
 P10V-017,numerical,anchor lender_base_ebitda FY2025,PASS,225.344,225.344
 P10V-018,numerical,anchor opening_funded_debt selected,PASS,727.51671875,727.51671875

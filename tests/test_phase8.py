@@ -5,10 +5,12 @@ from __future__ import annotations
 import csv
 import subprocess
 import sys
+import tempfile
 import unittest
 import zipfile
 from decimal import Decimal
 from pathlib import Path
+from unittest import mock
 from xml.etree import ElementTree as ET
 
 
@@ -16,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import phase8  # noqa: E402
+import remediation_controls  # noqa: E402
 
 
 MAIN_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -157,6 +160,11 @@ class Phase8WorkbookTests(unittest.TestCase):
     def test_08_historicals_are_not_scenario_driven(self) -> None:
         self.assertNotIn("Assumptions", self.xml_text("Historicals"))
 
+    def test_08a_historical_cash_interest_is_a_separate_diagnostic(self) -> None:
+        text = "\n".join(self.shared)
+        self.assertIn("Cash interest paid (disclosed historical diagnostic)", text)
+        self.assertIn("historical lender ebitda to disclosed cash interest paid", text.lower())
+
     def test_09_sources_and_uses_is_formula_driven(self) -> None:
         self.assertIn("SUM", self.formula("Transaction", "D11"))
         self.assertIn("G10", self.formula("Transaction", "D12"))
@@ -175,11 +183,46 @@ class Phase8WorkbookTests(unittest.TestCase):
         self.assertNotIn("D20", self.formula("Forecast", "D24"))
         self.assertEqual(self.formula("Forecast", "D25"), "D24+D20")
 
+    def test_11b_live_financing_chain_reconciles_operating_and_cash_inputs(self) -> None:
+        cfads = self.formula("Debt Schedule", "I12")
+        self.assertIn("Assumptions!$D$21", cfads)
+        self.assertIn("Assumptions!$D$23", cfads)
+        self.assertIn("$F12", cfads)
+        self.assertIn("$G12", cfads)
+        self.assertIn("AE12", self.formula("Debt Schedule", "T12"))
+        self.assertIn("AM12", self.formula("Debt Schedule", "P12"))
+        self.assertIn("AN12", self.formula("Debt Schedule", "P12"))
+        cash_identity = self.formula("Debt Schedule", "AP12")
+        for address in ("I12", "P12", "T12", "U12", "K12", "V12", "Q12", "L12", "M12", "W12"):
+            self.assertIn(address, cash_identity)
+
+    def test_11c_due_paid_and_shortfall_columns_are_distinct(self) -> None:
+        interest_due = self.formula("Debt Schedule", "AE12")
+        self.assertIn("AH", interest_due)
+        self.assertIn("O12+O12", interest_due)
+        self.assertNotIn("AO12", interest_due)
+        self.assertIn("MAX(0,AE12-T12)", self.formula("Debt Schedule", "AF12"))
+        self.assertIn("MAX(0,AG12-K12)", self.formula("Debt Schedule", "AH12"))
+        self.assertIn("MAX(0,AI12-U12)", self.formula("Debt Schedule", "AJ12"))
+        self.assertIn("MAX(0,AK12-M12)", self.formula("Debt Schedule", "AL12"))
+        self.assertIn("Debt Schedule'!$AE$12:$AE$47", self.formula("Covenants", "M12"))
+        self.assertIn("Debt Schedule'!$T$12:$T$47", self.formula("Forecast", "D23"))
+        self.assertIn("period-end draws and repayments affect later periods", "\n".join(self.shared))
+
+    def test_11d_post_closing_ebitda_period_is_explicit(self) -> None:
+        text = "\n".join(self.shared)
+        self.assertIn("FY2026 post-closing nine-month EBITDA (Feb. 1-Oct. 31, 2026)", text)
+        self.assertIn("FY2026 post-closing nine-month lender-base EBITDA (Feb. 1-Oct. 31, 2026)", text)
+
     def test_12_covenant_step_downs_and_boundary_formulas(self) -> None:
         formula = self.formula("Covenants", "J8")
         self.assertIn("DATE(2027,10,31)", formula)
         self.assertIn("DATE(2028,10,31)", formula)
         self.assertIn(">J8", self.formula("Covenants", "L8"))
+        self.assertIn("<=Q12", self.formula("Covenants", "R12"))
+        self.assertIn("<=Assumptions!$D$34", self.formula("Covenants", "T12"))
+        self.assertIn("<=Assumptions!$D$34", self.formula("Liquidity", "R13"))
+        self.assertTrue(self.formula("Covenants", "V12").startswith('IF(X12="INCOMPLETE","N/D"'))
 
     def test_13_nd_and_nm_are_distinct(self) -> None:
         formula = self.formula("Covenants", "O12")
@@ -191,11 +234,22 @@ class Phase8WorkbookTests(unittest.TestCase):
         self.assertIn('"N/M"', self.formula("Covenants", "I8"))
 
     def test_15_snapshot_stale_formula_uses_current_signature(self) -> None:
-        self.assertIn("AC12-AD12", self.formula("Scenario Comparison", "AE12"))
+        stale = self.formula("Scenario Comparison", "AE12")
+        self.assertIn("EXACT(AC12,AD12)", stale)
+        self.assertIn("EXACT(AA12,Assumptions!$D$6)", stale)
+        self.assertIn("EXACT(AB12,Assumptions!$D$8)", stale)
+        input_state = self.formula("Assumptions", "D7")
+        self.assertIn("ISBLANK($D$12)", input_state)
+        self.assertIn('"number:"', input_state)
+        self.assertIn('TEXT(ROUND($D$12,12),"0.000000000000000")', input_state)
+        self.assertNotIn("$D$12*1", input_state)
         self.assertEqual(len(self.captures), 9)
 
     def test_16_all_in_liquidity_includes_opening_position(self) -> None:
+        self.assertEqual(self.formula("Liquidity", "D7"), "MIN(Q13:Q47)")
+        self.assertIn("MATCH(D7,Q13:Q47,0)", self.formula("Liquidity", "D8"))
         self.assertEqual(self.formula("Liquidity", "D9"), "MIN(D6,D7)")
+        self.assertIn("Q13<Assumptions!$D$31", self.formula("Liquidity", "R13"))
 
     def test_17_unpaid_obligations_remain_visible(self) -> None:
         self.assertIn("MAX(0,-W12)", self.formula("Debt Schedule", "AC12"))
@@ -244,15 +298,12 @@ class Phase8WorkbookTests(unittest.TestCase):
     def test_25_final_workbook_is_saved_in_base(self) -> None:
         self.assertEqual(self.displayed_value("Assumptions", "D4"), "Base")
 
-    def test_26_recovery_remains_pending_phase9(self) -> None:
+    def test_26_official_recovery_remains_not_determinable(self) -> None:
         text = "\n".join(self.shared)
-        if (ROOT / "data" / "phase9").exists():
-            self.assertIn("Official facility recovery remains N/D", text)
-            self.assertIn("Recovery analysis", text)
-        else:
-            self.assertIn("Pending Phase 9", text)
-            self.assertIn("No recovery percentage presented", text)
-            self.assertNotIn("recovery percentage calculated", text.lower())
+        self.assertIn("Official facility recovery", text)
+        self.assertIn("Official recovery N/D", text)
+        self.assertEqual(self.displayed_value("Recovery", "D45"), "N/D")
+        self.assertNotIn("recovery percentage calculated", text.lower())
 
     def test_27_source_ledger_respects_cutoff(self) -> None:
         ledger = rows(phase8.DOCS / "SOURCE_LEDGER.csv")
@@ -274,20 +325,192 @@ class Phase8WorkbookTests(unittest.TestCase):
             cwd=ROOT, text=True, capture_output=True, check=True,
         )
         changed = {line for line in result.stdout.splitlines() if line}
-        self.assertLessEqual(changed, {"docs/phase-7/COVENANT_DESIGN.md"})
+        self.assertEqual(
+            remediation_controls.unapproved_paths(
+                ROOT,
+                list(changed),
+                remediation_controls.PHASE2_AUTHORIZED_SHA256,
+                remediation_controls.PHASE6_AUTHORIZED_SHA256,
+                remediation_controls.PHASE7_AUTHORIZED_SHA256,
+            ),
+            [],
+        )
+
+    def test_29a_readme_regeneration_replaces_stale_phase8_section(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="quanex-p8-readme-") as directory:
+            root = Path(directory)
+            readme = root / "README.md"
+            readme.write_text(
+                "# Test\n\nCurrent recommendation: **Conditional Approval**.\n\n"
+                "## Phase 8 Excel underwriting model\n\n"
+                "Recovery analysis remains pending Phase 9, and no final credit recommendation is made.\n\n"
+                "## Current release\n\nRetain this section.\n",
+                encoding="utf-8",
+            )
+            with mock.patch.object(phase8, "ROOT", root):
+                phase8.update_readme()
+            regenerated = readme.read_text(encoding="utf-8")
+        self.assertEqual(regenerated.count("## Phase 8 Excel underwriting model"), 1)
+        self.assertIn("Current recommendation: **Conditional Approval**", regenerated)
+        self.assertIn("historical phase boundaries do not supersede the current **Conditional Approval**", regenerated)
+        self.assertNotIn("Recovery analysis remains pending Phase 9, and no final credit recommendation is made.", regenerated)
+        self.assertIn("## Current release\n\nRetain this section.", regenerated)
 
     def test_30_external_engine_dynamic_behavior(self) -> None:
-        report = phase8.dynamic()
+        with tempfile.TemporaryDirectory(prefix="quanex-p8-engine-evidence-") as directory:
+            report = phase8.dynamic(Path(directory) / "dynamic.csv")
         self.assertEqual(report["dynamic_status"], "PASS")
-        self.assertEqual(report["test_count"], 28)
+        self.assertEqual(report["test_count"], len(phase8.REQUIRED_DYNAMIC_CASES))
 
     def test_31_dynamic_validation_has_separate_evidence(self) -> None:
         dynamic = next(row for row in self.validations if row["validation_id"] == "P8V-012")
         self.assertEqual(dynamic["status"], "PASS")
         self.assertNotEqual(dynamic["observed"], "not_run")
         evidence = rows(phase8.DYNAMIC_EVIDENCE)
-        self.assertEqual(len(evidence), 28)
+        self.assertEqual(len(evidence), len(phase8.REQUIRED_DYNAMIC_CASES))
         self.assertTrue(all(row["status"] == "PASS" for row in evidence))
+
+
+class Phase8DynamicEvidenceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.evidence = Path(self.temp.name) / "dynamic.csv"
+        self.patch = mock.patch.object(phase8, "DYNAMIC_EVIDENCE", self.evidence)
+        self.patch.start()
+        self.report = {
+            "dynamic_status": "PASS",
+            "tests": [
+                {"test": case["test_name"], "status": "PASS", "observed": {"case": case["case_id"]}}
+                for case in phase8.REQUIRED_DYNAMIC_CASES
+            ],
+            "engine": phase8.DYNAMIC_TEST_ENGINE,
+            "final_scenario": "Base",
+            "tested_artifact": phase8.DYNAMIC_TESTED_ARTIFACT,
+            "tested_artifact_sha256": phase8.sha256(phase8.MODEL),
+            "tested_artifact_semantic_fingerprint": phase8.normalized_fingerprint(),
+        }
+
+    def tearDown(self) -> None:
+        self.patch.stop()
+        self.temp.cleanup()
+
+    def write_valid(self) -> list[dict[str, str]]:
+        phase8.write_dynamic_evidence(self.report)
+        return rows(self.evidence)
+
+    def replace_rows(self, evidence_rows: list[dict[str, str]], fields: list[str] | None = None) -> None:
+        phase8.write_csv(self.evidence, evidence_rows, fields or list(phase8.DYNAMIC_EVIDENCE_FIELDS))
+
+    def test_complete_versioned_registry_passes_with_full_metadata(self) -> None:
+        evidence_rows = self.write_valid()
+        self.assertEqual(len(evidence_rows), len(phase8.REQUIRED_DYNAMIC_CASES))
+        self.assertEqual({row["case_id"] for row in evidence_rows}, {case["case_id"] for case in phase8.REQUIRED_DYNAMIC_CASES})
+        self.assertTrue(all(row["test_definition_version"] == phase8.DYNAMIC_TEST_DEFINITION_VERSION for row in evidence_rows))
+        self.assertTrue(all(all(row[field] for field in phase8.DYNAMIC_EVIDENCE_FIELDS) for row in evidence_rows))
+        self.assertEqual(phase8.dynamic_evidence_state()[0], "PASS")
+
+    def test_missing_or_unexpected_schema_field_fails(self) -> None:
+        valid = self.write_valid()
+        fields = [field for field in phase8.DYNAMIC_EVIDENCE_FIELDS if field != "input_scope"]
+        self.replace_rows(valid, fields)
+        self.assertEqual(phase8.dynamic_evidence_state()[0], "FAIL")
+
+    def test_truncated_duplicate_and_extra_case_sets_fail(self) -> None:
+        valid = self.write_valid()
+        variants = {
+            "truncated": valid[:-1],
+            "duplicate": valid[:-1] + [dict(valid[0])],
+            "extra": valid + [{**valid[-1], "evidence_id": "P8DE-999", "case_id": "P8DT-999", "test_name": "undeclared test"}],
+        }
+        for label, evidence_rows in variants.items():
+            with self.subTest(label=label):
+                self.replace_rows(evidence_rows)
+                self.assertEqual(phase8.dynamic_evidence_state()[0], "FAIL")
+
+    def test_failed_not_run_and_unknown_statuses_cannot_pass(self) -> None:
+        valid = self.write_valid()
+        for status, expected in (("FAIL", "FAIL"), ("NOT_RUN", "NOT_RUN"), ("N/D", "FAIL")):
+            with self.subTest(status=status):
+                changed = [dict(row) for row in valid]
+                changed[0]["status"] = status
+                self.replace_rows(changed)
+                self.assertEqual(phase8.dynamic_evidence_state()[0], expected)
+
+    def test_blank_or_stale_metadata_fails(self) -> None:
+        valid = self.write_valid()
+        for field, value in (
+            ("stage", ""),
+            ("evidence_id", "P8DE-999"),
+            ("scenario", "wrong scenario"),
+            ("input_scope", "wrong input"),
+            ("engine", "different engine"),
+            ("dynamic_script_sha256", "0" * 64),
+            ("workbook_builder_sha256", "0" * 64),
+            ("semantic_comparator_sha256", "0" * 64),
+            ("source_input_signature", "0" * 64),
+            ("test_definition_version", "obsolete"),
+            ("test_definition_sha256", "0" * 64),
+            ("tested_artifact", "different.xlsx"),
+            ("tested_artifact_sha256", "0" * 64),
+            ("tested_artifact_semantic_fingerprint", "0" * 64),
+        ):
+            with self.subTest(field=field):
+                changed = [dict(row) for row in valid]
+                changed[0][field] = value
+                self.replace_rows(changed)
+                self.assertEqual(phase8.dynamic_evidence_state()[0], "FAIL")
+
+    def test_writer_rejects_incomplete_duplicate_failed_or_unobserved_reports(self) -> None:
+        original = list(self.report["tests"])
+        variants = {
+            "incomplete": original[:-1],
+            "duplicate": original[:-1] + [dict(original[0])],
+            "failed": [{**item, "status": "FAIL"} if index == 0 else item for index, item in enumerate(original)],
+            "not_run": [{**item, "status": "NOT_RUN"} if index == 0 else item for index, item in enumerate(original)],
+            "missing_observed": [{key: value for key, value in item.items() if key != "observed"} if index == 0 else item for index, item in enumerate(original)],
+        }
+        for label, test_rows in variants.items():
+            with self.subTest(label=label):
+                self.report["tests"] = test_rows
+                with self.assertRaises(phase8.Phase8Error):
+                    phase8.write_dynamic_evidence(self.report)
+                self.assertFalse(self.evidence.exists())
+        self.report["tests"] = original
+
+    def test_custom_evidence_is_separate_and_must_match_current_artifact(self) -> None:
+        self.evidence.write_bytes(b"preserve stage evidence")
+        stage_before = self.evidence.read_bytes()
+        custom = Path(self.temp.name) / "phase10-final-dynamic.csv"
+        label = "model/Quanex_Credit_Underwriting.xlsx (Phase 10 final artifact)"
+        report = dict(self.report)
+        report["tested_artifact"] = label
+        phase8.write_dynamic_evidence(
+            report, evidence_path=custom, tested_artifact=label,
+        )
+        self.assertEqual(self.evidence.read_bytes(), stage_before)
+        self.assertEqual(
+            phase8.dynamic_evidence_state(custom, tested_artifact=label)[0],
+            "PASS",
+        )
+        evidence_rows = rows(custom)
+        for row in evidence_rows:
+            row["tested_artifact_sha256"] = "0" * 64
+        phase8.write_csv(custom, evidence_rows, list(phase8.DYNAMIC_EVIDENCE_FIELDS))
+        self.assertEqual(
+            phase8.dynamic_evidence_state(custom, tested_artifact=label)[0],
+            "FAIL",
+        )
+
+    def test_read_only_validation_does_not_rewrite_phase8_records(self) -> None:
+        failing_report = {"engine": "fixture", "checks": [], "parity": {}}
+        with mock.patch.object(phase8, "write_csv") as writer:
+            with self.assertRaises(phase8.Phase8Error):
+                phase8.validate_workbook(failing_report, write_outputs=False)
+            writer.assert_not_called()
+        with mock.patch.object(phase8, "write_csv") as writer:
+            with self.assertRaises(phase8.Phase8Error):
+                phase8.validate_workbook(failing_report)
+            self.assertEqual(writer.call_count, 2)
 
 
 if __name__ == "__main__":

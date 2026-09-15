@@ -16,26 +16,36 @@ Only the Python standard library is required by the analytical Python scripts. N
 
 ## Network-free boundary
 
-The build uses committed source data, approved local extracts, and documented desktop applications. It does not retrieve SEC filings, market data, or other analytical evidence. A local `git clone --no-hardlinks --config core.autocrlf=false` is used; the destination repository records the setting before its initial checkout, and no remote fetch occurs. The harness confirms the initial checkout matches the canonical Git blobs for the seven Phase 3 control files. It then compares every unmodified tracked live file with its canonical clone byte-for-byte: exact matches remain untouched, and only an exact LF-to-CRLF checkout representation is rematerialized from Git using command-local `core.autocrlf=true`. Any other difference fails. The stored clone-local setting remains `false`. It next overlays the fixed 62-path remediation inventory byte-for-byte. It never modifies system or global Git configuration and deletes its explicit temporary workspace after use. External-link health is a separate non-analytical release check and never feeds the model. A known SEC HTTP 403 is classified as access-restricted when the approved URL and source identity remain present, not as proof that the filing is absent.
+The build uses committed source data, approved local extracts, and documented desktop applications. It does not retrieve SEC filings, market data, or other analytical evidence. A local `git clone --no-hardlinks --no-checkout --config core.autocrlf=false` is used; the destination repository records the setting before the selected commit is initially checked out, materializes that exact commit as its local `main` branch, and performs no remote fetch. The initial disposable tree therefore comes only from canonical committed content, and the harness confirms the seven Phase 3 control files match their Git blobs. Git then applies the tested Windows generated-text profile only to Markdown and JSON paths actually rewritten by the Phase 0-10 build, including the README and report sources. Static Phase 0 evidence hashed by Phase 10, maintained Phase 11 source documents, and CSV remain canonical LF. Clean-release mode requires a clean source checkout at the explicitly selected commit and uses zero overlays. Pre-commit overlay-review mode requires an explicit base commit plus a manifest whose paths exactly equal the working changes; only those files are copied byte-for-byte, and that result is not labeled clean-release verification. No unmodified working-tree path is imported. The harness never modifies system or global Git configuration and deletes its explicit temporary workspace after use. External-link health is a separate non-analytical release check and never feeds the model. A known SEC HTTP 403 is classified as access-restricted when the approved URL and source identity remain present, not as proof that the filing is absent.
 
 ## Commands
 
-Generate Phase 11 records and run the clean-clone comparison:
+Generate Phase 11 records and run a declared pre-commit overlay comparison (keep the manifest outside the tracked repository):
 
 ```powershell
-python -B scripts/phase11.py all
+python -B scripts/phase11.py all --base <base-sha> --overlay-manifest <manifest-path>
 ```
+
+The supplied manifest must exactly match the working tree before generation. The command may make only its fixed Phase 11 generated-output paths newly dirty. After it completes, refresh the external manifest from the complete final `git status`; that refreshed exact inventory is required by the remaining pre-commit commands.
 
 Run the read-only repository controls:
 
 ```powershell
 python -B scripts/phase11.py validate
+# For a dirty pre-commit review, use the refreshed post-generation manifest:
+python -B scripts/phase11.py validate --overlay-manifest <manifest-path>
 ```
 
-Run the complete non-mutating gate from the authoritative repository:
+Review the refreshed, explicitly declared pre-commit overlay without writing source files:
 
 ```powershell
-python -B scripts/phase11.py verify-isolated
+python -B scripts/phase11.py verify-overlay --base <base-sha> --overlay-manifest <manifest-path>
+```
+
+After committing, run the final clean-release gate against that exact candidate SHA with zero overlays:
+
+```powershell
+python -B scripts/phase11.py verify-release --commit <candidate-sha>
 ```
 
 The disposable clone runs these build and validation commands in dependency order:
@@ -58,11 +68,11 @@ python -B -m unittest -v tests.test_phase8 tests.test_phase9 tests.test_phase10 
 python -B -m unittest -v tests.test_audit_remediation
 ```
 
-After the canonical initial checkout check, the harness reconstructs only proven Git checkout EOL representations from committed content. It does not patch a generator, copy an unauthorized path, normalize comparison results, or infer an exception from status; the clone's repository-local `core.autocrlf=false` remains unchanged. The isolated gate then runs both Excel PowerShell harnesses and LibreOffice against disposable workbook copies. PDF inspection and page rendering use disposable paths. The expected decision-facing outputs are `model/Quanex_Credit_Underwriting.xlsx`, `reports/credit_memo.pdf`, `reports/committee_brief.pdf`, the three PNG charts, and the phase data/document registers recorded in `ARTIFACT_MANIFEST.csv`.
+The harness does not patch a generator, copy an undeclared path, normalize comparison results, or infer an exception from status; the clone's repository-local `core.autocrlf=false` remains unchanged. Each freshly written Phase 8, Phase 9, and Phase 10 validation record is compared with the selected candidate immediately after its owning step. A difference fails before restoration or a later overwrite, and no validation snapshot is restored. The isolated gate then runs both Excel PowerShell harnesses and LibreOffice against disposable workbook copies. PDF inspection and page rendering use disposable paths. The expected decision-facing outputs are `model/Quanex_Credit_Underwriting.xlsx`, `reports/credit_memo.pdf`, `reports/committee_brief.pdf`, the three PNG charts, and the phase data/document registers recorded in `ARTIFACT_MANIFEST.csv`.
 
 ## Comparison and saved scenario
 
-Deterministic CSV, JSON, Markdown, PNG, and PDF outputs must be byte-identical. Exact SHA-256 comparisons remain raw-byte comparisons after canonical checkout; the harness does not normalize CRLF/LF at comparison time and therefore still detects genuine numeric, text, quoting, ordering, encoding, and newline differences. The Phase 8 capture timestamp is a stable technical-generation label, not analytical evidence, so repeated generation does not create time-based CSV churn. The XLSX archive may contain calculation-engine metadata differences, so the required pass criterion is the approved normalized fingerprint plus structure and scenario controls. `Assumptions!D4` must display `Base`; the workbook must retain 14 sheets, the approved formula count, 7 charts, zero external links, and zero cached formula errors.
+Deterministic CSV, JSON, Markdown, PNG, PDF, and canonicalized XLSX outputs must be byte-identical. Exact SHA-256 comparisons remain raw-byte comparisons after canonical checkout; the harness does not normalize CRLF/LF at comparison time and therefore still detects genuine numeric, text, quoting, ordering, encoding, newline, or workbook-package differences. The Phase 8 capture timestamp is a stable technical-generation label, not analytical evidence, so repeated generation does not create time-based CSV churn. The workbook must also match the approved normalized fingerprint and structure/scenario controls. `Assumptions!D4` must display `Base`; the workbook must retain 14 sheets, the approved formula count, 7 charts, zero external links, and zero cached formula errors.
 
 ## Safety and troubleshooting
 

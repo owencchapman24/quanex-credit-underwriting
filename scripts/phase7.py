@@ -15,6 +15,13 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Iterator
 
+from remediation_controls import (
+    PHASE2_AUTHORIZED_SHA256,
+    PHASE6_AUTHORIZED_SHA256,
+    PHASE7_AUTHORIZED_SHA256,
+    unapproved_paths,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -143,7 +150,8 @@ COVENANT_TEST_FIELDS = (
     "zero_cash_net_leverage", "capped_cash_net_leverage_diagnostic",
     "contractual_leverage_limit", "leverage_ratio_headroom",
     "leverage_debt_headroom", "leverage_break_even_ebitda",
-    "ltm_cash_interest", "interest_coverage", "contractual_interest_coverage_minimum",
+    "ltm_cash_interest_due_or_payable", "ltm_cash_interest_paid",
+    "interest_coverage", "contractual_interest_coverage_minimum",
     "interest_coverage_ratio_headroom", "interest_coverage_earnings_cushion",
     "usable_liquidity", "contractual_minimum_liquidity",
     "liquidity_headroom", "analyst_leverage_warning", "analyst_coverage_warning",
@@ -535,7 +543,7 @@ def covenant_proposal_rows() -> list[dict[str, str]]:
         ("P7CP-003", "proposed_contractual", "maximum gross total funded leverage", "First leverage step-down.", "Same as P7CP-002", "Same as P7CP-002", "3.25", "turns", "2027-11-01", "2028-10-31", "quarterly", "none", "Included at face principal.", "Same as P7CP-002.", "Same as P7CP-002.", "Same as P7CP-002.", "None assumed.", "No automatic step-up.", "Same as P7CP-002.", "Same as P7CP-002.", "hypothetical_proposal", "Step date aligns to the FY2028 testing year; exact certificate date and stub-period treatment require drafting."),
         ("P7CP-004", "proposed_contractual", "maximum gross total funded leverage", "Second leverage step-down.", "Same as P7CP-002", "Same as P7CP-002", "3.00", "turns", "2028-11-01", "2031-01-31", "quarterly", "none", "Included at face principal.", "Same as P7CP-002.", "Same as P7CP-002.", "Same as P7CP-002.", "None assumed.", "No automatic step-up.", "Same as P7CP-002.", "Same as P7CP-002.", "hypothetical_proposal", "The final test before maturity must not imply refinancing availability."),
         ("P7CP-005", "proposed_contractual", "minimum EBITDA to cash-interest coverage", "LTM lender EBITDA divided by LTM cash interest paid or payable on funded debt.", "LTM lender EBITDA", "LTM cash interest paid or payable, including default interest and recurring cash financing fees when known", "3.00", "turns", "2026-01-31", "2031-01-31", "quarterly and at closing when a complete LTM denominator is delivered", "not_applicable", "Interest on drawn revolver included.", "Cash interest on all funded debt and recurring cash financing fees.", "Noncash amortization of financing fees unless paid in cash.", "Acquisition pro forma EBITDA only under the same documented leverage rules.", "None assumed.", "No step-up.", "An uncured breach is proposed to block new drawings, subject to final legal drafting.", "Quarterly certificate and monthly cash-interest reporting.", "hypothetical_proposal", "The Phase 6 model lacks a complete closing-date LTM cash-interest denominator; opening compliance is therefore not determinable from public information."),
-        ("P7CP-006", "proposed_contractual", "minimum usable liquidity", "Unrestricted eligible cash plus undrawn revolver capacity that is legally and operationally drawable.", "Eligible cash + revolver commitment - drawn revolver - outstanding LCs", "not_applicable", "50", MONEY, "2026-01-31", "2031-01-31", "monthly and upon any distribution, acquisition, or additional debt", "Eligible cash only after entity, jurisdiction, tax, lien and operating-need validation.", "Deducted from revolver capacity.", "Unrestricted cash and available, drawable revolver capacity.", "Trapped, restricted, pledged, required operating, or otherwise unavailable cash.", "Tested after the proposed transaction or distribution.", "No cure amount assumed.", "No step-up.", "Failure is proposed to block new drawings and restricted payments, subject to final legal drafting.", "Monthly liquidity certificate within 15 days; immediate notice below $75m warning.", "hypothetical_proposal", "The Phase 7 model gives no credit to book cash; final eligible cash remains pending information."),
+        ("P7CP-006", "proposed_contractual", "minimum usable liquidity", "Unrestricted eligible cash plus undrawn revolver capacity that is legally and operationally drawable.", "Eligible cash + revolver commitment - drawn revolver - outstanding LCs", "not_applicable", "50", MONEY, "2026-01-31", "2031-01-31", "monthly and upon any distribution, acquisition, or additional debt", "Eligible cash only after entity, jurisdiction, tax, lien and operating-need validation.", "Deducted from revolver capacity.", "Unrestricted cash and available, drawable revolver capacity.", "Trapped, restricted, pledged, required operating, or otherwise unavailable cash.", "Tested after the proposed transaction or distribution.", "No cure amount assumed.", "No step-up.", "Failure is proposed to block new drawings and restricted payments, subject to final legal drafting.", "Monthly liquidity certificate within 15 days; immediate notice at or below the $75m warning.", "hypothetical_proposal", "The Phase 7 model gives no credit to book cash; final eligible cash remains pending information."),
         ("P7CP-007", "analyst_warning", "gross total funded leverage warning", "Earlier lender intervention threshold using the proposed gross debt and lender EBITDA definitions.", "Same as P7CP-002", "Same as P7CP-002", "3.25", "turns", "2026-01-31", "2027-10-31", "monthly monitoring and quarterly formal calculation", "none", "Included.", "Same as proposed covenant.", "Same as proposed covenant.", "No unsupported pro forma credit.", "not_applicable", "not_applicable", "Does not itself determine legal drawability.", "Monthly leverage estimate; quarterly certificate.", "analyst_threshold", "A warning is not a covenant breach, waiver decision, or compliance certificate."),
         ("P7CP-008", "analyst_warning", "gross total funded leverage warning", "First warning step-down.", "Same as P7CP-002", "Same as P7CP-002", "3.00", "turns", "2027-11-01", "2028-10-31", "monthly monitoring and quarterly formal calculation", "none", "Included.", "Same as proposed covenant.", "Same as proposed covenant.", "No unsupported pro forma credit.", "not_applicable", "not_applicable", "Does not itself determine legal drawability.", "Monthly leverage estimate; quarterly certificate.", "analyst_threshold", "A warning is 0.25x inside the proposed covenant."),
         ("P7CP-009", "analyst_warning", "gross total funded leverage warning", "Second warning step-down.", "Same as P7CP-002", "Same as P7CP-002", "2.75", "turns", "2028-11-01", "2031-01-31", "monthly monitoring and quarterly formal calculation", "none", "Included.", "Same as proposed covenant.", "Same as proposed covenant.", "No unsupported pro forma credit.", "not_applicable", "not_applicable", "Does not itself determine legal drawability.", "Monthly leverage estimate; quarterly certificate.", "analyst_threshold", "A warning is 0.25x inside the proposed covenant."),
@@ -1053,10 +1061,10 @@ def build_covenant_tests(
     opening_ebitda = fy2025_lender_ebitda()
     opening_liquidity = dec(selected.revolver_commitment) - dec(selected.letters_of_credit) - dec(selected.opening_revolver)
     for scenario_id, monthly in selected_monthly.items():
-        rows: list[tuple[str, str, str, Decimal, Decimal, Decimal | None, Decimal | None, Decimal, Decimal, str, str, str, str, str, str]] = []
+        rows: list[tuple[str, str, str, Decimal, Decimal, Decimal | None, Decimal | None, Decimal | None, Decimal, Decimal, str, str, str, str, str, str]] = []
         rows.append((
             "2026-01-31", "FY2025", "closing_test", opening_gross, opening_bank,
-            opening_ebitda, None, opening_liquidity, Decimal("25"),
+            opening_ebitda, None, None, opening_liquidity, Decimal("25"),
             "available_before_covenant_test", "no", "no", "no", "no", "",
         ))
         for row in monthly:
@@ -1064,11 +1072,18 @@ def build_covenant_tests(
                 continue
             bank_debt = dec(row["ending_term_principal"]) + dec(row["ending_revolver"])
             ebitda = dec(row["ttm_lender_base_ebitda"]) if row["ttm_lender_base_ebitda"] else None
-            coverage = dec(row["ebitda_cash_interest_coverage"]) if row["ebitda_cash_interest_coverage"] else None
-            ltm_interest = ebitda / coverage if ebitda is not None and coverage is not None and coverage > 0 else None
+            ltm_interest_due = (
+                dec(row["ltm_cash_interest_due_or_payable"])
+                if row["ltm_cash_interest_due_or_payable"] else None
+            )
+            ltm_interest_paid = (
+                dec(row["ltm_cash_interest_paid"])
+                if row["ltm_cash_interest_paid"] else None
+            )
             rows.append((
                 row["month_end"], row["fiscal_year"], row["quarter"], bank_debt + retained,
-                bank_debt, ebitda, ltm_interest, dec(row["usable_liquidity"]), dec(row["ending_cash"]), row["drawability_status"],
+                bank_debt, ebitda, ltm_interest_due, ltm_interest_paid,
+                dec(row["usable_liquidity"]), dec(row["ending_cash"]), row["drawability_status"],
                 "yes" if dec(row["cash_floor_shortfall"]) > TOLERANCE else "no",
                 row["commitment_exhaustion_flag"], row["mandatory_payment_failure_flag"],
                 "yes" if dec(row["unsupported_maturity_gap"]) > TOLERANCE else "no",
@@ -1077,7 +1092,8 @@ def build_covenant_tests(
         for item in rows:
             (
                 period_end, fiscal_year, quarter, gross_debt, bank_debt, ebitda,
-                ltm_interest, liquidity, ending_cash, drawability, cash_floor_flag,
+                ltm_interest_due, ltm_interest_paid, liquidity, ending_cash,
+                drawability, cash_floor_flag,
                 exhaustion_flag, payment_flag, maturity_flag, source_row,
             ) = item
             test_counter += 1
@@ -1091,9 +1107,9 @@ def build_covenant_tests(
             ratio_headroom = limit - dec(leverage_value) if leverage_value not in {N_D_VALUE, N_M} else leverage_value
             debt_headroom = limit * ebitda - gross_debt if ebitda is not None and ebitda > 0 else ratio(Decimal("0"), ebitda)
             break_even = gross_debt / limit
-            coverage = coverage_ratio(ebitda, ltm_interest)
+            coverage = coverage_ratio(ebitda, ltm_interest_due)
             coverage_ratio_headroom = dec(coverage) - Decimal("3.00") if coverage not in {N_D_VALUE, N_M} else coverage
-            earnings_cushion = ebitda - Decimal("3.00") * ltm_interest if ebitda is not None and ltm_interest is not None and ltm_interest > 0 else coverage
+            earnings_cushion = ebitda - Decimal("3.00") * ltm_interest_due if ebitda is not None and ltm_interest_due is not None and ltm_interest_due > 0 else coverage
             leverage_status = maximum_measure_status(leverage_value, warning, limit)
             coverage_status = minimum_measure_status(coverage, Decimal("3.50"), Decimal("3.00"))
             liquidity_status = minimum_measure_status(liquidity, Decimal("75"), Decimal("50"))
@@ -1122,7 +1138,8 @@ def build_covenant_tests(
                 "leverage_ratio_headroom": fmt(ratio_headroom),
                 "leverage_debt_headroom": fmt(debt_headroom),
                 "leverage_break_even_ebitda": fmt(break_even),
-                "ltm_cash_interest": fmt(ltm_interest) if ltm_interest is not None else N_D_VALUE,
+                "ltm_cash_interest_due_or_payable": fmt(ltm_interest_due) if ltm_interest_due is not None else N_D_VALUE,
+                "ltm_cash_interest_paid": fmt(ltm_interest_paid) if ltm_interest_paid is not None else N_D_VALUE,
                 "interest_coverage": fmt(coverage),
                 "contractual_interest_coverage_minimum": "3",
                 "interest_coverage_ratio_headroom": fmt(coverage_ratio_headroom),
@@ -1145,7 +1162,7 @@ def build_covenant_tests(
                 "upstream_ids": f"STR-008;{source_row};{scenario_id}",
                 "classification": "proposed_covenant_test_not_official_compliance",
                 "review_status": REVIEW,
-                "limitations": "Gross covenant and zero-cash treatment are Phase 7 proposals. Capped-cash leverage is diagnostic only. N/D means a required input is missing; N/M is reserved for a nonpositive denominator.",
+                "limitations": "Gross covenant and zero-cash treatment are Phase 7 proposals. Capped-cash leverage is diagnostic only. Interest coverage uses modeled LTM interest due/payable, not cash paid, and does not count accumulated arrears again as newly due. N/D means a required input is missing; N/M is reserved for a nonpositive denominator.",
             })
             for metric, actual, threshold, gap, debt_gap, break_even_value, cushion, units, formula in (
                 ("gross_funded_leverage", fmt(leverage_value), fmt(limit), fmt(ratio_headroom), fmt(debt_headroom), fmt(break_even), "", "turns", "ratio headroom = L - D/E; debt headroom = L*E - D; break-even EBITDA = D/L"),
@@ -1890,14 +1907,19 @@ def prior_analytical_artifact_changes() -> list[str]:
             cwd=ROOT, text=True, capture_output=True, check=True,
         ).stdout.splitlines()
         if path.startswith(("data/phase", "docs/phase-"))
-        and path != "docs/phase-7/COVENANT_DESIGN.md"
     ]
     result = subprocess.run(
         ["git", "diff", "--name-only", checkpoint, "--", *protected],
         cwd=ROOT, text=True, capture_output=True, check=True,
     )
     missing = [path for path in protected if not (ROOT / path).is_file()]
-    return sorted(set(missing + [line for line in result.stdout.splitlines() if line]))
+    return unapproved_paths(
+        ROOT,
+        missing + [line for line in result.stdout.splitlines() if line],
+        PHASE2_AUTHORIZED_SHA256,
+        PHASE6_AUTHORIZED_SHA256,
+        PHASE7_AUTHORIZED_SHA256,
+    )
 
 
 def changed_paths() -> list[str]:
@@ -1926,15 +1948,26 @@ def validate_changed_paths() -> None:
     if not approved_head:
         raise Phase7Error(f"HEAD is not the approved Phase 6/7 checkpoint or a descendant: {head}")
     allowed_exact = {
-        ".gitattributes", "README.md", "scripts/phase4.py", "scripts/phase5.py", "scripts/phase6.py", "scripts/phase7.py",
+        ".gitattributes", "README.md", "scripts/phase2.py", "scripts/phase4.py", "scripts/phase5.py", "scripts/phase6.py", "scripts/phase7.py",
+        "scripts/remediation_controls.py", "scripts/workbook_semantics.py", "scripts/xlsx_package.py",
         "scripts/phase8.py", "scripts/build-phase8.mjs", "scripts/recalculate-phase8.py",
         "scripts/validate-phase8-excel.ps1",
         "scripts/phase9.py", "scripts/build-phase9.mjs", "scripts/recalculate-phase9.py", "scripts/validate-phase9-excel.ps1",
         "scripts/phase10.py", "scripts/build-phase10.mjs", "scripts/render-phase10.py",
         "scripts/phase11.py", "scripts/render-phase11.py",
-        "tests/test_phase6.py", "tests/test_phase7.py", "tests/test_phase8.py", "tests/test_phase9.py", "tests/test_phase10.py", "tests/test_phase11.py",
+        "tests/test_phase2.py", "tests/test_phase6.py", "tests/test_phase7.py", "tests/test_phase8.py", "tests/test_phase9.py", "tests/test_phase10.py", "tests/test_phase11.py", "tests/test_workbook_semantics.py", "tests/test_xlsx_package.py",
         "tests/test_audit_remediation.py",
         "model/Quanex_Credit_Underwriting.xlsx",
+        "data/phase2/raw/SUPPLEMENTAL_FACTS.csv",
+        "data/phase2/processed/historical_spread.csv",
+        "data/phase2/processed/historical_credit_metrics.csv",
+        "data/phase2/processed/reconciliation_results.csv",
+        "docs/phase-2/CREDIT_ANALYSIS.md", "docs/phase-2/METHODOLOGY.md",
+        "docs/phase-2/SOURCE_LEDGER.csv",
+        "data/phase6/processed/ANALYTICAL_THRESHOLD_TESTS.csv",
+        "data/phase6/processed/MONTHLY_LIQUIDITY_STRESS.csv",
+        "data/phase6/processed/SENSITIVITY_GRIDS.csv",
+        "docs/phase-6/METHODOLOGY.md", "docs/phase-6/SOURCE_LEDGER.csv",
     }
     unexpected = [
         path for path in changed_paths()
@@ -2031,6 +2064,18 @@ def validation_rows(
     add("covenants", "one increment above maximum covenant", maximum_measure_status(Decimal("3.500001"), Decimal("3.25"), Decimal("3.50")) == "breached", "breached", "ratio > covenant")
     add("warnings", "coverage warning inside covenant", all(dec(row["analyst_coverage_warning"]) > dec(row["contractual_interest_coverage_minimum"]) for row in tests), "checked", "warning > covenant")
     add("warnings", "liquidity warning inside covenant", all(dec(row["analyst_liquidity_warning"]) > dec(row["contractual_minimum_liquidity"]) for row in tests), "checked", "warning > covenant")
+    for label, value, expected in (
+        ("one increment above coverage warning", Decimal("3.500001"), "compliant"),
+        ("exact coverage warning boundary", Decimal("3.50"), "warning"),
+        ("one increment below coverage warning", Decimal("3.499999"), "warning"),
+    ):
+        add("warnings", label, minimum_measure_status(value, Decimal("3.50"), Decimal("3.00")) == expected, minimum_measure_status(value, Decimal("3.50"), Decimal("3.00")), expected)
+    for label, value, expected in (
+        ("one increment above liquidity warning", Decimal("75.000001"), "compliant"),
+        ("exact liquidity warning boundary", Decimal("75"), "warning"),
+        ("one increment below liquidity warning", Decimal("74.999999"), "warning"),
+    ):
+        add("warnings", label, minimum_measure_status(value, Decimal("75"), Decimal("50")) == expected, minimum_measure_status(value, Decimal("75"), Decimal("50")), expected)
     add("headroom", "leverage headroom formula", all(row["ratio_or_amount_headroom"] in {N_D_VALUE, N_M} or abs(dec(row["ratio_or_amount_headroom"]) - (dec(row["threshold"]) - dec(row["actual"]))) <= TOLERANCE for row in headroom if row["metric"] in {"gross_funded_leverage", "analyst_leverage_warning"}), "checked", "L-D/E", fmt(TOLERANCE))
     add("headroom", "no negative or zero EBITDA ratios", all(row["gross_funded_leverage"] in {N_D_VALUE, N_M} or (row["ttm_lender_base_ebitda"] and dec(row["ttm_lender_base_ebitda"]) > 0) for row in tests), "checked", "N/D missing; N/M nonpositive denominator")
     add("coverage", "missing coverage is N/D", all(row["interest_coverage"] == N_D_VALUE and row["coverage_status"] == N_D for row in tests if row["quarter"] == "closing_test"), "checked", "N/D")
@@ -2201,7 +2246,7 @@ The selected practical candidate uses a {money(selected['term_commitment'])} ter
 
 Proposed gross funded leverage uses term principal, drawn revolver and the $62.619m retained funded-debt proxy, with zero cash netting. Capped-cash leverage is reported only as a diagnostic. Ratio headroom is `L - D/E`; debt headroom is `L*E - D`; break-even EBITDA is `D/L`; coverage earnings cushion is `E - C*I`. A missing EBITDA input produces `N/D`; a nonpositive EBITDA denominator produces `N/M`.
 
-For a maximum measure, equality with the covenant remains compliant and only a value above the maximum is breached. Equality with the analyst-warning threshold activates a warning. Missing required information is `N/D`; `N/M` is reserved for a nonpositive denominator. Proposed contractual tests, analyst warnings and the existing contractual reconstruction are separate. Proposed covenant results are not official compliance calculations. Closing cash-interest coverage is `N/D` because a complete LTM denominator is unavailable.
+For a maximum measure, equality with the covenant remains compliant and only a value above the maximum is breached. Equality with any analyst-warning threshold activates a warning, including coverage at 3.50x and usable liquidity at $75m. Missing required information is `N/D`; `N/M` is reserved for a nonpositive denominator. Forecast EBITDA coverage uses modeled LTM cash interest due/payable; cash paid and accumulated arrears remain separately visible, and accumulated arrears are not counted again as newly due. The public model omits unavailable default interest, recurring fees, retained-obligation interest and final legal-definition effects. Proposed contractual tests, analyst warnings and the existing contractual reconstruction are separate. Proposed covenant results are not official compliance calculations. Closing cash-interest coverage is `N/D` because a complete LTM denominator is unavailable.
 
 ## Drawability paths
 

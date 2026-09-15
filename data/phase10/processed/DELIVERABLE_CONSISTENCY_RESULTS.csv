@@ -24,18 +24,20 @@ P10C-022,numerical,"memo contains ('lender_base_ebitda', 'FY2025')",PASS,True,$2
 P10C-023,numerical,"brief contains ('lender_base_ebitda', 'FY2025')",PASS,True,$225.344m
 P10C-024,numerical,"memo contains ('opening_funded_debt', 'selected')",PASS,True,$727.517m
 P10C-025,numerical,"brief contains ('opening_funded_debt', 'selected')",PASS,True,$727.517m
-P10C-026,numerical,"memo contains ('opening_gross_leverage', 'selected')",PASS,True,3.2285x
-P10C-027,numerical,"brief contains ('opening_gross_leverage', 'selected')",PASS,True,3.2285x
-P10C-028,numerical,"memo contains ('base_all_in_liquidity', 'selected')",PASS,True,$263.902m
-P10C-029,numerical,"brief contains ('base_all_in_liquidity', 'selected')",PASS,True,$263.902m
-P10C-030,numerical,"memo contains ('unsupported_maturity_gap', 'BASE')",PASS,True,$324.780m
-P10C-031,numerical,"brief contains ('unsupported_maturity_gap', 'BASE')",PASS,True,$324.780m
-P10C-032,numerical,"memo contains ('unsupported_maturity_gap', 'MODERATE_UNMITIGATED')",PASS,True,$408.375m
-P10C-033,numerical,"brief contains ('unsupported_maturity_gap', 'MODERATE_UNMITIGATED')",PASS,True,$408.375m
-P10C-034,numerical,"memo contains ('unsupported_maturity_gap', 'SEVERE_UNMITIGATED')",PASS,True,$604.258m
-P10C-035,numerical,"brief contains ('unsupported_maturity_gap', 'SEVERE_UNMITIGATED')",PASS,True,$604.258m
-P10C-036,workbook,recommendation banner,PASS,Conditional Approval — proceed with diligence and definitive documentation. | owner_reviewed | public-information hypothetical transaction,Conditional Approval — proceed with diligence and definitive documentation.
-P10C-037,workbook,no final authorization,PASS,No final commitment or funding authorization exists until all material conditions are satisfied.,No final commitment or funding authorization exists until all material conditions are satisfied.
-P10C-038,workbook,recommendation status,PASS,Conditional Approval — proceed with diligence and definitive documentation. | owner_reviewed,owner_reviewed
-P10C-039,workbook,fallback,PASS,If unmet: no added debt/covenant loosening; retain or amend existing via limited amendment/extension,limited amendment/extension
-P10C-040,workbook,official recovery,PASS,Official recovery N/D; collateral/business-sale recovery is secondary backstop,N/D
+P10C-026,numerical,"memo contains ('historical_lender_ebitda_to_disclosed_cash_interest_paid', 'FY2025')",PASS,True,4.2817x
+P10C-027,numerical,"brief contains ('historical_lender_ebitda_to_disclosed_cash_interest_paid', 'FY2025')",PASS,True,4.2817x
+P10C-028,numerical,"memo contains ('opening_gross_leverage', 'selected')",PASS,True,3.2285x
+P10C-029,numerical,"brief contains ('opening_gross_leverage', 'selected')",PASS,True,3.2285x
+P10C-030,numerical,"memo contains ('base_all_in_liquidity', 'selected')",PASS,True,$263.902m
+P10C-031,numerical,"brief contains ('base_all_in_liquidity', 'selected')",PASS,True,$263.902m
+P10C-032,numerical,"memo contains ('unsupported_maturity_gap', 'BASE')",PASS,True,$324.780m
+P10C-033,numerical,"brief contains ('unsupported_maturity_gap', 'BASE')",PASS,True,$324.780m
+P10C-034,numerical,"memo contains ('unsupported_maturity_gap', 'MODERATE_UNMITIGATED')",PASS,True,$408.375m
+P10C-035,numerical,"brief contains ('unsupported_maturity_gap', 'MODERATE_UNMITIGATED')",PASS,True,$408.375m
+P10C-036,numerical,"memo contains ('unsupported_maturity_gap', 'SEVERE_UNMITIGATED')",PASS,True,$604.258m
+P10C-037,numerical,"brief contains ('unsupported_maturity_gap', 'SEVERE_UNMITIGATED')",PASS,True,$604.258m
+P10C-038,workbook,recommendation banner,PASS,Conditional Approval — proceed with diligence and definitive documentation. | owner_reviewed | public-information hypothetical transaction,Conditional Approval — proceed with diligence and definitive documentation.
+P10C-039,workbook,no final authorization,PASS,No final commitment or funding authorization exists until all material conditions are satisfied.,No final commitment or funding authorization exists until all material conditions are satisfied.
+P10C-040,workbook,recommendation status,PASS,Conditional Approval — proceed with diligence and definitive documentation. | owner_reviewed,owner_reviewed
+P10C-041,workbook,fallback,PASS,If unmet: no added debt/covenant loosening; retain or amend existing via limited amendment/extension,limited amendment/extension
+P10C-042,workbook,official recovery,PASS,Official recovery N/D; collateral/business-sale recovery is secondary backstop,N/D

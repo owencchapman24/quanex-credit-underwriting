@@ -19,6 +19,8 @@ from decimal import Decimal, InvalidOperation, ROUND_CEILING, getcontext
 from pathlib import Path
 from typing import Iterable, Sequence
 
+from remediation_controls import PHASE2_AUTHORIZED_SHA256, unapproved_paths
+
 
 # Match the committed Phase 5 Decimal context. A module-level increase would
 # mutate process-global Decimal behavior during test discovery and alter prior-
@@ -189,6 +191,8 @@ MONTHLY_FIELDS = (
     "maturity_term_payment", "ending_term_principal", "opening_revolver", "revolver_draw",
     "revolver_repayment", "maturity_revolver_payment", "ending_revolver",
     "cash_interest_due", "cash_interest_paid", "cash_interest_shortfall",
+    "cash_interest_arrears_balance", "ltm_cash_interest_due_or_payable",
+    "ltm_cash_interest_paid",
     "retained_obligation_due", "retained_obligation_paid", "retained_obligation_shortfall",
     "base_planned_dividend", "planned_dividend_after_mitigation", "dividend_paid",
     "dividend_suspended", "dividend_unpaid", "dividend_revolver_draw_caused",
@@ -745,11 +749,13 @@ def run_monthly(
     ebitda_window: deque[Decimal] = deque(
         [dec(q1["lender_base_ebitda"]) / Decimal("3")] * 3, maxlen=12,
     )
-    interest_window: deque[Decimal] = deque(maxlen=12)
+    interest_due_window: deque[Decimal] = deque(maxlen=12)
+    interest_paid_window: deque[Decimal] = deque(maxlen=12)
     cfads_window: deque[Decimal] = deque(maxlen=12)
     scheduled_service_window: deque[Decimal] = deque(maxlen=12)
     shutoff_effective: date | None = None
     analytical_trigger: date | None = None
+    cash_interest_arrears = Decimal("0")
     rows: list[dict[str, str]] = []
 
     for index, month_end in enumerate(dates, start=1):
@@ -904,7 +910,9 @@ def run_monthly(
         )
         usable_liquidity = max(Decimal("0"), ending_cash - floor) + usable_availability
         ebitda_window.append(allocated["lender_base_ebitda"])
-        interest_window.append(dec(final["interest_paid"]))
+        interest_due_window.append(dec(final["interest_due"]))
+        interest_paid_window.append(dec(final["interest_paid"]))
+        cash_interest_arrears += dec(final["interest_shortfall"])
         cfads_window.append(allocated["cfads_before_cash_interest"])
         scheduled_service_window.append(
             dec(final["interest_paid"]) + dec(final["scheduled_paid"]) + dec(final["retained_paid"])
@@ -921,12 +929,21 @@ def run_monthly(
         cfads_interest_coverage: Decimal | None = None
         debt_service_coverage: Decimal | None = None
         coverage_failure = False
-        if len(interest_window) == 12 and sum(interest_window, Decimal("0")) > 0:
+        ltm_interest_due = (
+            sum(interest_due_window, Decimal("0"))
+            if len(interest_due_window) == 12 else None
+        )
+        ltm_interest_paid = (
+            sum(interest_paid_window, Decimal("0"))
+            if len(interest_paid_window) == 12 else None
+        )
+        if ltm_interest_due is not None and ltm_interest_due > 0:
             interest_coverage, coverage_failure, _ = analytical_coverage_test(
                 sum(list(ebitda_window)[-12:], Decimal("0")),
-                sum(interest_window, Decimal("0")),
+                ltm_interest_due,
             )
-            cfads_interest_coverage = sum(cfads_window, Decimal("0")) / sum(interest_window, Decimal("0"))
+        if ltm_interest_paid is not None and ltm_interest_paid > 0:
+            cfads_interest_coverage = sum(cfads_window, Decimal("0")) / ltm_interest_paid
         if len(scheduled_service_window) == 12 and sum(scheduled_service_window, Decimal("0")) > 0:
             debt_service_coverage = sum(cfads_window, Decimal("0")) / sum(scheduled_service_window, Decimal("0"))
         liquidity_failure, _ = analytical_liquidity_test(usable_liquidity)
@@ -1032,6 +1049,9 @@ def run_monthly(
             "ending_revolver": fmt(ending_revolver), "cash_interest_due": fmt(dec(final["interest_due"])),
             "cash_interest_paid": fmt(dec(final["interest_paid"])),
             "cash_interest_shortfall": fmt(dec(final["interest_shortfall"])),
+            "cash_interest_arrears_balance": fmt(cash_interest_arrears),
+            "ltm_cash_interest_due_or_payable": fmt(ltm_interest_due),
+            "ltm_cash_interest_paid": fmt(ltm_interest_paid),
             "retained_obligation_due": fmt(retained_due),
             "retained_obligation_paid": fmt(dec(final["retained_paid"])),
             "retained_obligation_shortfall": fmt(dec(final["retained_shortfall"])),
@@ -1083,7 +1103,7 @@ def run_monthly(
             "review_status": "owner_reviewed_for_phase6_testing" if config.severity != "base" else "inherited_phase5_base",
             "source_ids": "SRC-001;SRC-002;SRC-003",
             "upstream_ids": "P5A-014;P5A-015;P5A-016;P5A-018:P5A-032;SCN-001:SCN-009",
-            "limitations": "Recurring financing fees, official covenant definitions, eligible cash, distribution permissions and actual closing cash remain unavailable. Monthly timing is an owner-reviewed testing convention, not observed borrower seasonality.",
+            "limitations": "Recurring financing fees, official covenant definitions, eligible cash, distribution permissions and actual closing cash remain unavailable. EBITDA coverage uses each month's modeled interest due once; CFADS cash-interest coverage and the cash waterfall use interest paid. The arrears balance accumulates modeled unpaid interest without adding it again to later interest due, and excludes unmodeled default interest, fees, capitalization and legal remedies. Monthly timing is an owner-reviewed testing convention, not observed borrower seasonality.",
         })
         cash, term, revolver = ending_cash, ending_term, ending_revolver
         if maturity_event:
@@ -2092,7 +2112,11 @@ def prior_analytical_artifact_changes() -> list[str]:
         cwd=ROOT, text=True, capture_output=True, check=True,
     )
     missing = [path for path in protected if not (ROOT / path).is_file()]
-    return sorted(set(missing + [line for line in result.stdout.splitlines() if line]))
+    return unapproved_paths(
+        ROOT,
+        missing + [line for line in result.stdout.splitlines() if line],
+        PHASE2_AUTHORIZED_SHA256,
+    )
 
 
 def changed_paths() -> list[str]:
@@ -2137,16 +2161,23 @@ def validate_changed_paths() -> None:
             f"descendant of the approved Phase 6 commit: {head}"
         )
     allowed_exact = {
-        ".gitattributes", "README.md", "scripts/phase4.py", "scripts/phase5.py", "scripts/phase6.py",
+        ".gitattributes", "README.md", "scripts/phase2.py", "scripts/phase4.py", "scripts/phase5.py", "scripts/phase6.py",
+        "scripts/remediation_controls.py", "scripts/workbook_semantics.py", "scripts/xlsx_package.py",
         "scripts/phase7.py", "scripts/phase8.py", "scripts/build-phase8.mjs",
         "scripts/recalculate-phase8.py", "scripts/validate-phase8-excel.ps1",
         "scripts/phase9.py", "scripts/build-phase9.mjs", "scripts/recalculate-phase9.py", "scripts/validate-phase9-excel.ps1",
         "scripts/phase10.py", "scripts/build-phase10.mjs", "scripts/render-phase10.py",
         "scripts/phase11.py", "scripts/render-phase11.py",
-        "tests/test_phase5.py", "tests/test_phase6.py",
+        "tests/test_phase2.py", "tests/test_phase5.py", "tests/test_phase6.py", "tests/test_workbook_semantics.py", "tests/test_xlsx_package.py",
         "tests/test_phase7.py", "tests/test_phase8.py", "tests/test_phase9.py", "tests/test_phase10.py", "tests/test_phase11.py",
         "tests/test_audit_remediation.py",
         "model/Quanex_Credit_Underwriting.xlsx",
+        "data/phase2/raw/SUPPLEMENTAL_FACTS.csv",
+        "data/phase2/processed/historical_spread.csv",
+        "data/phase2/processed/historical_credit_metrics.csv",
+        "data/phase2/processed/reconciliation_results.csv",
+        "docs/phase-2/CREDIT_ANALYSIS.md", "docs/phase-2/METHODOLOGY.md",
+        "docs/phase-2/SOURCE_LEDGER.csv",
     }
     unexpected = [
         path for path in changed_paths()
@@ -2371,7 +2402,7 @@ Maturity capacity becomes zero and available cash above the floor is applied to 
 
 ## Thresholds and drawability
 
-The model separately reports gross funded leverage, book-cash net leverage (diagnostic only), analytical bank leverage, EBITDA/cash-interest coverage, CFADS/cash-interest coverage, CFADS/scheduled-debt-service coverage, and usable liquidity. The 3.25x/3.00x leverage, 3.00x coverage, and $50m liquidity levels are analytical warnings, not final covenants.
+The model separately reports gross funded leverage, book-cash net leverage (diagnostic only), analytical bank leverage, EBITDA/LTM cash-interest-due-or-payable coverage, CFADS/cash-interest-paid coverage, CFADS/scheduled-debt-service coverage, and usable liquidity. Interest due, interest paid, and accumulated arrears remain separate: unpaid current interest does not improve the defined EBITDA coverage ratio, the cash waterfall uses the amount actually paid, and accumulated arrears are not counted again as newly due. The modeled due-or-payable denominator excludes unavailable retained-obligation interest, recurring fees, default interest, capitalization, and final legal-definition effects, so it is not certified compliance. The 3.25x/3.00x leverage, 3.00x coverage, and $50m liquidity levels are analytical warnings, not final covenants.
 
 Formal contractual compliance is `NOT_DETERMINABLE`. The proposed no-waiver path switches off new revolver draws beginning the month after the first modeled analytical failure. The continued-drawability path leaves capacity available. Existing-facility drawability is never switched off from this unofficial reconstruction.
 

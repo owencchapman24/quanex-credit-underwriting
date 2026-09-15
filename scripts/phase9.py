@@ -23,6 +23,12 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+from workbook_semantics import semantic_workbook_fingerprint
+from xlsx_package import canonicalize_xlsx
+
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data" / "phase9"
@@ -31,8 +37,9 @@ PROCESSED = DATA / "processed"
 DOCS = ROOT / "docs" / "phase-9"
 MODEL = ROOT / "model" / "Quanex_Credit_Underwriting.xlsx"
 DYNAMIC_EVIDENCE = PROCESSED / "DYNAMIC_RECOVERY_TEST_EVIDENCE.csv"
+PHASE8_BASELINE_EVIDENCE = PROCESSED / "PHASE8_BASELINE_VERIFICATION.csv"
 APPROVED_PHASE8_COMMIT = "1a23f7f1c393082329277bf4129ba31343f6cb87"
-PHASE8_FINGERPRINT = "3f66a86542015ee20dc9812b99f00cfbcc84b8a56e78173247e5a5a77a7922dd"
+PHASE8_FINGERPRINT = "a0c7329eca85e5d830e74394a9e7b72eacfc0aee3c93ee920901321397a6ed80"
 INFORMATION_CUTOFF = "2025-12-15"
 NODE = Path.home() / ".cache" / "codex-runtimes" / "codex-primary-runtime" / "dependencies" / "node" / "bin" / "node.exe"
 NODE_MODULES = Path.home() / ".cache" / "codex-runtimes" / "codex-primary-runtime" / "dependencies" / "node" / "node_modules"
@@ -58,6 +65,44 @@ SOURCE_INPUTS = (
     "docs/phase-0/EVIDENCE_INVENTORY.csv",
 )
 
+DYNAMIC_TEST_DEFINITION_VERSION = "P9-DYNAMIC-3.0"
+DYNAMIC_TEST_ENGINE = "LibreOffice 26.8.0.3"
+DYNAMIC_TESTED_ARTIFACT = "model/Quanex_Credit_Underwriting.xlsx (Phase 9 pre-recalculation disposable test copy)"
+
+
+def _dynamic_case(
+    case_id: str,
+    test_name: str,
+    stage: str,
+    scenario: str,
+    input_scope: str,
+) -> dict[str, str]:
+    return {
+        "case_id": case_id,
+        "test_name": test_name,
+        "stage": stage,
+        "scenario": scenario,
+        "input_scope": input_scope,
+    }
+
+
+DYNAMIC_EVIDENCE_FIELDS = (
+    "evidence_id", "case_id", "test_name", "stage", "scenario", "input_scope",
+    "status", "observed", "engine", "final_scenario", "test_definition_version",
+    "test_definition_sha256", "dynamic_script_sha256", "workbook_builder_sha256",
+    "semantic_comparator_sha256",
+    "upstream_dynamic_script_sha256", "upstream_workbook_builder_sha256",
+    "source_input_signature", "tested_artifact", "tested_artifact_sha256",
+    "tested_artifact_semantic_fingerprint",
+)
+
+PHASE8_BASELINE_EVIDENCE_FIELDS = (
+    "verification_id", "tested_artifact", "tested_artifact_sha256",
+    "observed_normalized_fingerprint", "expected_normalized_fingerprint",
+    "phase8_source_input_signature", "phase8_builder_sha256",
+    "phase8_semantic_comparator_sha256", "phase8_dynamic_definition_sha256", "status",
+)
+
 
 class Phase9Error(RuntimeError):
     """Raised when a Phase 9 control fails."""
@@ -75,6 +120,28 @@ def load_module(name: str, path: Path):
 
 phase7 = load_module("phase7_for_phase9", ROOT / "scripts" / "phase7.py")
 phase8 = load_module("phase8_for_phase9", ROOT / "scripts" / "phase8.py")
+
+
+# The Phase 9 evidence obligation incorporates the exact, versioned Phase 8
+# case registry rather than restating a stale subset or assuming a permanent
+# count.  Recovery-specific cases are additive and independently identified.
+REQUIRED_PHASE8_DYNAMIC_CASES = tuple(dict(case) for case in phase8.REQUIRED_DYNAMIC_CASES)
+REQUIRED_RECOVERY_DYNAMIC_CASES = (
+    _dynamic_case("P9RDT-001", "J32 initial numeric value", "phase9_recovery", "Base", "Assumptions!J32 recovery multiple value"),
+    _dynamic_case("P9RDT-002", "J32 initial visible multiple text", "phase9_recovery", "Base", "Assumptions!J32 recovery multiple display"),
+    _dynamic_case("P9RDT-003", "I32:K32 use multiple not percentage formats", "phase9_recovery", "Base", "Assumptions!I32:K32 recovery-multiple formats"),
+    _dynamic_case("P9RDT-004", "going-concern multiple changes proceeds", "phase9_recovery", "Base", "Assumptions!J32 recovery multiple; going-concern proceeds"),
+    _dynamic_case("P9RDT-005", "J32 numeric 4.5 displays 4.50x", "phase9_recovery", "Base", "Assumptions!J32 edited recovery multiple display"),
+    _dynamic_case("P9RDT-006", "input edit creates no workbook errors", "phase9_recovery", "Base", "recovery multiple edit; workbook formula-error scan"),
+    _dynamic_case("P9RDT-007", "receivables realization changes asset proceeds", "phase9_recovery", "Base", "Assumptions!J35 receivables realization; asset proceeds"),
+    _dynamic_case("P9RDT-008", "zero stressed EBITDA produces zero going-concern proceeds", "phase9_recovery", "Base", "Assumptions!J31 stressed EBITDA; going-concern proceeds"),
+    _dynamic_case("P9RDT-009", "official recovery remains N/D", "phase9_recovery", "Base", "recovery input edits; official recovery conclusion"),
+    _dynamic_case("P9RDT-010", "goodwill receives zero recovery credit", "phase9_recovery", "Base", "Recovery goodwill realization credit"),
+    _dynamic_case("P9RDT-011", "intangibles receive zero recovery credit", "phase9_recovery", "Base", "Recovery intangible realization credit"),
+    _dynamic_case("P9RDT-012", "Base case selector remains restored", "phase9_recovery", "Base", "Assumptions!D4 final saved scenario"),
+    _dynamic_case("P9RDT-013", "restored multiple returns Base proceeds", "phase9_recovery", "Base", "recovery inputs reset; Base going-concern proceeds"),
+)
+REQUIRED_DYNAMIC_CASES = REQUIRED_PHASE8_DYNAMIC_CASES + REQUIRED_RECOVERY_DYNAMIC_CASES
 
 
 def read_csv(path: Path) -> list[dict[str, str]]:
@@ -109,6 +176,126 @@ def fmt(value: Decimal | object) -> str:
 
 def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def phase8_baseline_fingerprint(path: Path) -> str:
+    """Return the Phase 8 semantic identity of a candidate pre-overlay workbook."""
+    return semantic_workbook_fingerprint(
+        path,
+        prefix_parts=(
+            phase8.source_signature().encode("ascii"),
+            (ROOT / "scripts" / "build-phase8.mjs").read_bytes(),
+        ),
+    )
+
+
+def verify_phase8_baseline(path: Path) -> dict[str, str]:
+    """Record and enforce the actual Phase 8 workbook identity before overlay."""
+    observed = phase8_baseline_fingerprint(path)
+    phase8_status, phase8_observed = phase8.dynamic_evidence_state()
+    phase8_artifact = phase8.dynamic_evidence_artifact_identity()
+    record = {
+        "verification_id": "P9P8-001",
+        "tested_artifact": "model/Quanex_Credit_Underwriting.xlsx before Phase 9 overlay",
+        "tested_artifact_sha256": sha256(path),
+        "observed_normalized_fingerprint": observed,
+        "expected_normalized_fingerprint": PHASE8_FINGERPRINT,
+        "phase8_source_input_signature": phase8.source_signature(),
+        "phase8_builder_sha256": sha256(ROOT / "scripts" / "build-phase8.mjs"),
+        "phase8_semantic_comparator_sha256": sha256(ROOT / "scripts" / "workbook_semantics.py"),
+        "phase8_dynamic_definition_sha256": phase8.dynamic_test_definition_sha256(),
+        "status": "PASS" if (
+            observed == PHASE8_FINGERPRINT
+            and phase8_status == "PASS"
+            and phase8_artifact == (sha256(path), observed)
+        ) else "FAIL",
+    }
+    write_csv(PHASE8_BASELINE_EVIDENCE, [record], list(PHASE8_BASELINE_EVIDENCE_FIELDS))
+    if record["status"] != "PASS":
+        raise Phase9Error(
+            "Actual pre-overlay Phase 8 workbook or its dynamic evidence differs: "
+            f"fingerprint={observed}; expected={PHASE8_FINGERPRINT}; "
+            f"dynamic={phase8_status} ({phase8_observed}); artifact={phase8_artifact}"
+        )
+    return record
+
+
+def phase8_baseline_evidence_state() -> tuple[str, str]:
+    """Validate the exact pre-overlay workbook identity recorded by Phase 9."""
+    if not PHASE8_BASELINE_EVIDENCE.is_file():
+        return "NOT_RUN", "Phase 8 pre-overlay verification record absent"
+    rows = read_csv(PHASE8_BASELINE_EVIDENCE)
+    if len(rows) != 1:
+        return "FAIL", f"expected one Phase 8 pre-overlay record, found {len(rows)}"
+    row = rows[0]
+    if set(row) != set(PHASE8_BASELINE_EVIDENCE_FIELDS):
+        return "FAIL", "Phase 8 pre-overlay verification schema is incomplete or unexpected"
+    if any(not row[field].strip() for field in PHASE8_BASELINE_EVIDENCE_FIELDS):
+        return "FAIL", "Phase 8 pre-overlay verification contains blank metadata"
+    expected = {
+        "verification_id": "P9P8-001",
+        "tested_artifact": "model/Quanex_Credit_Underwriting.xlsx before Phase 9 overlay",
+        "observed_normalized_fingerprint": PHASE8_FINGERPRINT,
+        "expected_normalized_fingerprint": PHASE8_FINGERPRINT,
+        "phase8_source_input_signature": phase8.source_signature(),
+        "phase8_builder_sha256": sha256(ROOT / "scripts" / "build-phase8.mjs"),
+        "phase8_semantic_comparator_sha256": sha256(ROOT / "scripts" / "workbook_semantics.py"),
+        "phase8_dynamic_definition_sha256": phase8.dynamic_test_definition_sha256(),
+        "status": "PASS",
+    }
+    for field, value in expected.items():
+        if row[field] != value:
+            return "FAIL", f"Phase 8 pre-overlay {field} mismatch"
+    if not re.fullmatch(r"[0-9a-f]{64}", row["tested_artifact_sha256"]):
+        return "FAIL", "Phase 8 pre-overlay artifact SHA-256 is malformed"
+    phase8_status, phase8_observed = phase8.dynamic_evidence_state()
+    if phase8_status != "PASS":
+        return phase8_status, f"Phase 8 dynamic evidence: {phase8_observed}"
+    if phase8.dynamic_evidence_artifact_identity() != (
+        row["tested_artifact_sha256"], row["observed_normalized_fingerprint"]
+    ):
+        return "FAIL", "Phase 8 pre-overlay identity does not match its dynamic-test artifact"
+    return "PASS", (
+        f"verified {row['tested_artifact_sha256']} at semantic fingerprint "
+        f"{row['observed_normalized_fingerprint']}"
+    )
+
+
+def dynamic_test_definition_sha256() -> str:
+    serialized = json.dumps(
+        {
+            "version": DYNAMIC_TEST_DEFINITION_VERSION,
+            "phase8_definition_version": phase8.DYNAMIC_TEST_DEFINITION_VERSION,
+            "phase8_definition_sha256": phase8.dynamic_test_definition_sha256(),
+            "cases": REQUIRED_DYNAMIC_CASES,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def dynamic_runtime_metadata(
+    *,
+    artifact_sha256: str | None = None,
+    artifact_fingerprint: str | None = None,
+    tested_artifact: str | None = None,
+) -> dict[str, str]:
+    return {
+        "engine": DYNAMIC_TEST_ENGINE,
+        "final_scenario": "Base",
+        "test_definition_version": DYNAMIC_TEST_DEFINITION_VERSION,
+        "test_definition_sha256": dynamic_test_definition_sha256(),
+        "dynamic_script_sha256": sha256(ROOT / "scripts" / "recalculate-phase9.py"),
+        "workbook_builder_sha256": sha256(ROOT / "scripts" / "build-phase9.mjs"),
+        "semantic_comparator_sha256": sha256(ROOT / "scripts" / "workbook_semantics.py"),
+        "upstream_dynamic_script_sha256": sha256(ROOT / "scripts" / "recalculate-phase8.py"),
+        "upstream_workbook_builder_sha256": sha256(ROOT / "scripts" / "build-phase8.mjs"),
+        "source_input_signature": source_signature(),
+        "tested_artifact": tested_artifact or DYNAMIC_TESTED_ARTIFACT,
+        "tested_artifact_sha256": artifact_sha256 or sha256(MODEL),
+        "tested_artifact_semantic_fingerprint": artifact_fingerprint or normalized_fingerprint(),
+    }
 
 
 def git_head() -> str:
@@ -394,11 +581,11 @@ def monitoring_schedule() -> list[dict[str, str]]:
         ("MON-009", "DRV-005", "DIO", "Average inventory divided by cost of sales times fiscal days.", "days", "monthly", "Inventory aging and reserve schedule", "available_through_required_borrower_reporting", "FY2025 72.22", "above 80 days", "", "greater_than", "month and trailing three months", "Portfolio manager", "Provide SKU aging, reserve and liquidation plan.", "Require monthly inventory reduction milestones.", "10_business_days", "analyst_warning", "no", "DRV-005", "Mix and acquisition perimeter affect comparability."),
         ("MON-010", "DRV-013", "Payables and other operating working capital", "AP, accrued liabilities and other operating balances versus approved monthly forecast, separately bridged.", "USD_millions", "monthly", "Purchases, AP, accrual and other operating working-capital bridge", "available_through_required_borrower_reporting", "DPO not determinable", "variance above 10% from approved forecast or unexplained supplier stretching", "", "absolute_variance_greater_than", "month", "Portfolio manager", "Provide supplier aging and cash-flow reconciliation.", "Escalate unexplained funding benefit and revise liquidity forecast.", "5_business_days", "reporting_exception", "no", "DRV-013", "Cost of sales is not purchases; DPO remains N/D."),
         ("MON-011", "DRV-006", "Maintenance capital expenditure", "Actual and committed maintenance/safety capex versus approved maintenance floor.", "USD_millions", "monthly", "Project-level capex schedule", "dependent_on_private_diligence", "Maintenance floor N/D", "below approved maintenance floor or deferred safety project", "", "less_than_or_event", "year to date", "Portfolio manager", "Explain deferral and operational effect.", "Do not credit cash preservation; require project remediation plan.", "immediate", "analyst_warning", "no", "DRV-006", "Threshold becomes measurable only after borrower schedule."),
-        ("MON-012", "DRV-012", "Usable liquidity", "Eligible unrestricted cash plus undrawn drawable revolver capacity after LCs.", "USD_millions", "monthly", "Monthly liquidity certificate by entity and jurisdiction", "available_through_required_borrower_reporting", "$263.902m opening Base", "below $75m", "below $50m proposed covenant", "less_than", "month end and pro forma for material actions", "Credit officer", "Deliver 13-week cash forecast and corrective-action plan.", "Notify lenders immediately; suspend discretionary actions where documents permit.", "immediate", "analyst_warning", "possible", "DRV-012;P7CP-006;P7CP-011", "Eligible cash and drawability require final documentation."),
+        ("MON-012", "DRV-012", "Usable liquidity", "Eligible unrestricted cash plus undrawn drawable revolver capacity after LCs.", "USD_millions", "monthly", "Monthly liquidity certificate by entity and jurisdiction", "available_through_required_borrower_reporting", "$263.902m opening Base", "at or below $75m", "below $50m proposed covenant", "less_than_or_equal", "month end and pro forma for material actions", "Credit officer", "Deliver 13-week cash forecast and corrective-action plan.", "Notify lenders immediately; suspend discretionary actions where documents permit.", "immediate", "analyst_warning", "possible", "DRV-012;P7CP-006;P7CP-011", "Eligible cash and drawability require final documentation."),
         ("MON-013", "DRV-010;DRV-012", "Revolver utilization", "Drawn revolver plus LCs divided by commitment.", "percent", "monthly", "Debt and liquidity report", "available_through_required_borrower_reporting", "12.0% opening including LCs", "above 75%", "", "greater_than", "month end", "Portfolio manager", "Explain usage and deliver 13-week cash forecast.", "Increase reporting to weekly and restrict repurchases under proposed terms.", "immediate", "analyst_warning", "no", "DRV-010;DRV-012", "Availability depends on final draw conditions."),
         ("MON-014", "DRV-012", "Revolver drawability", "Representations, no-default conditions, covenant compliance and documentation needed for a new draw.", "status", "each_draw", "Borrowing request and compliance certificate", "dependent_on_private_diligence", "Available in Base before warnings", "any unmet draw condition", "documented draw condition", "event", "current", "Credit officer", "Provide cure, waiver request or alternative liquidity plan.", "Escalate immediately; preserve rights and do not assume continued funding.", "immediate", "legal_or_documentation_exception", "yes", "DRV-012", "Final conditions and remedies require executed documents."),
         ("MON-015", "DRV-012", "Gross total funded leverage", "Gross funded debt divided by lender EBITDA; zero cash netting.", "turns", "monthly", "Debt report and quarterly compliance certificate", "available_through_required_borrower_reporting", "3.2285x opening", "at or above 3.25x/3.00x/2.75x warning schedule", "above 3.50x/3.25x/3.00x proposed covenant schedule", "greater_than_or_equal_warning", "LTM", "Credit officer", "Provide covenant bridge and debt-reduction plan.", "At warning suspend repurchases and require 10-business-day plan; breach requires consent/waiver analysis.", "immediate", "contractual_covenant_or_warning", "yes", "DRV-012;P7CP-002:P7CP-009", "Official contractual EBITDA remains unavailable."),
-        ("MON-016", "DRV-012", "Cash-interest coverage", "LTM lender EBITDA divided by LTM cash interest paid or payable.", "turns", "monthly", "Cash-interest schedule and compliance certificate", "available_through_required_borrower_reporting", "Base modeled minimum 5.39x", "below 3.50x", "below 3.00x proposed covenant", "less_than", "LTM", "Credit officer", "Provide interest bridge, hedge status and revised forecast.", "Increase reporting and begin amendment/waiver planning before breach.", "immediate", "contractual_covenant_or_warning", "yes", "DRV-012;P7CP-005;P7CP-010", "Closing LTM cash interest remains N/D."),
+        ("MON-016", "DRV-012", "Cash-interest coverage", "LTM lender EBITDA divided by LTM cash interest paid or payable.", "turns", "monthly", "Cash-interest schedule and compliance certificate", "available_through_required_borrower_reporting", "Base modeled minimum 5.39x", "at or below 3.50x", "below 3.00x proposed covenant", "less_than_or_equal", "LTM", "Credit officer", "Provide interest bridge, hedge status and revised forecast.", "Increase reporting and begin amendment/waiver planning before breach.", "immediate", "contractual_covenant_or_warning", "yes", "DRV-012;P7CP-005;P7CP-010", "Closing LTM cash interest remains N/D."),
         ("MON-017", "DRV-012", "Covenant certificate", "Timely complete certificate using executed definitions with supporting calculations.", "status", "quarterly", "Quarterly compliance certificate", "available_through_required_borrower_reporting", "Required within proposed 45-day cadence", "late, incomplete or unreconciled certificate", "reporting covenant when documented", "event", "quarter", "Credit officer", "Deliver corrected certificate and reconciliation.", "Issue reporting exception; preserve default rights subject to cure language.", "immediate", "reporting_exception", "yes", "DRV-012", "Final delivery and cure terms require documentation."),
         ("MON-018", "DRV-012", "Scheduled principal and interest", "Cash due and paid by instrument and due date.", "USD_millions", "monthly", "Debt-service report and bank statements", "available_through_required_borrower_reporting", "No Base modeled failure", "any amount unpaid when due", "payment obligation", "event", "due date", "Credit officer", "Confirm payment, cause, cash position and cure status.", "Escalate immediately to special-assets/legal review and preserve remedies.", "immediate", "payment_default", "yes", "DRV-012", "Grace periods and remedies require final documents."),
         ("MON-019", "DRV-010", "Distributions with revolver outstanding", "Dividends and repurchases paid while revolver principal remains outstanding.", "USD_millions", "monthly", "Distribution, board approval and debt report", "available_through_required_borrower_reporting", "Base retains planned distributions", "any repurchase with revolver outstanding or debt-funded distribution", "proposed restriction", "event", "month", "Credit officer", "Provide source of funds and pro forma tests.", "Reject or require consent where documentation permits; revise deleveraging plan.", "before_payment", "legal_or_documentation_exception", "possible", "DRV-010;P7CP-014", "Rights depend on final restricted-payment drafting."),
@@ -463,7 +650,9 @@ Going-concern and asset-realization sensitivities are alternative methods and ar
 
 The owner reviewed all 16 Phase 9 decisions. Their underlying values remain illustrative assumptions or `N/D` conclusions rather than facts, appraisals, borrowing-base determinations or legal conclusions. The provisional borrower grade is `Elevated`, uses only the approved five-grade project scale and is not a bank or agency rating. Monitoring maps every Phase 3 driver to at least one specific trigger and action. No Phase 10 recommendation is made.
 
-Workbook lineage is explicit. The original Phase 8 normalized fingerprint was `12589f4c34975118fad1aea3ddb83de8f67b4521f33307104ef1bd42efb07dd7`; the corrected Excel-compatible Phase 8 fingerprint was `{PHASE8_FINGERPRINT}`. Phase 9 is generated from that corrected baseline.
+Workbook lineage is explicit. The original Phase 8 normalized fingerprint was `12589f4c34975118fad1aea3ddb83de8f67b4521f33307104ef1bd42efb07dd7`; the corrected Excel-compatible Phase 8 fingerprint was `{PHASE8_FINGERPRINT}`. Phase 9 is generated only after recording the actual Phase 8 pre-overlay raw SHA and semantic fingerprint and matching both to the complete Phase 8 dynamic-test evidence.
+
+Dynamic evidence uses `{DYNAMIC_TEST_DEFINITION_VERSION}`. It inherits all {len(REQUIRED_PHASE8_DYNAMIC_CASES)} exact `{phase8.DYNAMIC_TEST_DEFINITION_VERSION}` Phase 8 case identities and adds {len(REQUIRED_RECOVERY_DYNAMIC_CASES)} recovery-specific cases. Every required case must be unique and PASS with its declared stage, scenario, input scope, engine, script and builder hashes, source signature, versioned definition digest, and tested-artifact identity. Missing, truncated, duplicated, failed, not-run, or stale evidence cannot pass.
 """, encoding="utf-8")
     (DOCS / "RECOVERY_ANALYSIS.md").write_text(f"""# Recovery analysis
 
@@ -500,7 +689,7 @@ The grade assesses default risk only. It is not a bank grade, agency rating, pro
 """, encoding="utf-8")
     (DOCS / "MONITORING_PLAN.md").write_text(f"""# Monitoring and escalation plan
 
-The owner reviewed the {len(monitors)} monitoring records. They map all 13 Phase 3 risk drivers to defined reports, warning or event triggers, borrower responses, lender actions and escalation timing. Key quantitative warnings are comparable revenue below -5%, gross margin below 25%, LTM lender EBITDA below $180m, DSO above 45 days, DIO above 80 days, usable liquidity below $75m, gross leverage at the applicable 3.25x/3.00x/2.75x warning schedule and cash-interest coverage below 3.50x. Owner review does not convert a warning into a contractual right; proposed contractual thresholds remain subject to final documentation.
+The owner reviewed the {len(monitors)} monitoring records. They map all 13 Phase 3 risk drivers to defined reports, warning or event triggers, borrower responses, lender actions and escalation timing. Key quantitative warnings are comparable revenue below -5%, gross margin below 25%, LTM lender EBITDA below $180m, DSO above 45 days, DIO above 80 days, usable liquidity at or below $75m, gross leverage at the applicable 3.25x/3.00x/2.75x warning schedule and cash-interest coverage at or below 3.50x. Owner review does not convert a warning into a contractual right; proposed contractual thresholds remain subject to final documentation.
 
 Payment default, drawability failure, reporting exception, legal exception and maturity risk receive separate treatment. The lender investigates warnings, requires revised forecasts and corrective plans, increases reporting, requests restrictions only where documentation permits, evaluates waivers or support before reliance, and preserves remedies after an uncured default. Refinancing preparation begins at least 24 months before the January 2031 maturity and escalates at 12 months without an executable solution.
 """, encoding="utf-8")
@@ -610,46 +799,153 @@ def run_libreoffice(mode: str, workbook: Path = MODEL) -> dict[str, object]:
             print(result.stderr, file=sys.stderr, end="")
         if result.returncode:
             raise Phase9Error(f"LibreOffice Phase 9 {mode} failed")
+        canonicalize_xlsx(workbook)
         return json.loads(report.read_text(encoding="utf-8"))
     finally:
         report.unlink(missing_ok=True)
 
 
-def dynamic_evidence_state() -> tuple[str, str]:
-    if not DYNAMIC_EVIDENCE.is_file():
+def dynamic_evidence_state(
+    evidence_path: Path | None = None,
+    *,
+    tested_artifact: str | None = None,
+) -> tuple[str, str]:
+    custom_evidence = evidence_path is not None
+    evidence_path = DYNAMIC_EVIDENCE if evidence_path is None else evidence_path
+    if not evidence_path.is_file():
         return "NOT_RUN", "dynamic recovery evidence file absent"
-    rows = read_csv(DYNAMIC_EVIDENCE)
+    rows = read_csv(evidence_path)
     if not rows:
         return "NOT_RUN", "dynamic recovery evidence file empty"
-    if any(row.get("dynamic_script_sha256") != sha256(ROOT / "scripts" / "recalculate-phase9.py") for row in rows):
-        return "N/D", "dynamic recovery evidence does not match current interaction logic"
-    if any(row.get("workbook_builder_sha256") != sha256(ROOT / "scripts" / "build-phase9.mjs") for row in rows):
-        return "N/D", "dynamic recovery evidence does not match current workbook builder"
-    if any(row.get("source_input_signature") != source_signature() for row in rows):
-        return "N/D", "dynamic recovery evidence does not match current source inputs"
-    if any(row.get("status") == "FAIL" for row in rows):
+
+    if any(set(row) != set(DYNAMIC_EVIDENCE_FIELDS) for row in rows):
+        return "FAIL", "dynamic recovery evidence schema is incomplete or unexpected"
+    blank_fields = [
+        field for field in DYNAMIC_EVIDENCE_FIELDS
+        if any(not row.get(field, "").strip() for row in rows)
+    ]
+    if blank_fields:
+        return "FAIL", "dynamic recovery evidence metadata is blank: " + ", ".join(blank_fields)
+
+    expected_by_name = {case["test_name"]: case for case in REQUIRED_DYNAMIC_CASES}
+    names = [row["test_name"] for row in rows]
+    case_ids = [row["case_id"] for row in rows]
+    evidence_ids = [row["evidence_id"] for row in rows]
+    if len(names) != len(set(names)) or len(case_ids) != len(set(case_ids)) or len(evidence_ids) != len(set(evidence_ids)):
+        return "FAIL", "dynamic recovery evidence contains duplicate test names, case IDs, or evidence IDs"
+    if set(names) != set(expected_by_name) or len(rows) != len(REQUIRED_DYNAMIC_CASES):
+        missing = sorted(set(expected_by_name) - set(names))
+        extra = sorted(set(names) - set(expected_by_name))
+        return "FAIL", f"dynamic recovery evidence case set mismatch; missing={missing}; extra={extra}"
+
+    expected_evidence_ids = {
+        case["test_name"]: f"P9DE-{index:03d}"
+        for index, case in enumerate(REQUIRED_DYNAMIC_CASES, 1)
+    }
+    for row in rows:
+        case = expected_by_name[row["test_name"]]
+        for field in ("case_id", "stage", "scenario", "input_scope"):
+            if row[field] != case[field]:
+                return "FAIL", f"dynamic recovery evidence {field} mismatch for {row['test_name']}"
+        if row["evidence_id"] != expected_evidence_ids[row["test_name"]]:
+            return "FAIL", f"dynamic recovery evidence ID mismatch for {row['test_name']}"
+
+    artifact_shas = {row["tested_artifact_sha256"] for row in rows}
+    artifact_fingerprints = {row["tested_artifact_semantic_fingerprint"] for row in rows}
+    if len(artifact_shas) != 1 or len(artifact_fingerprints) != 1:
+        return "FAIL", "dynamic recovery evidence identifies inconsistent tested artifacts"
+    artifact_sha = next(iter(artifact_shas))
+    artifact_fingerprint = next(iter(artifact_fingerprints))
+    if not re.fullmatch(r"[0-9a-f]{64}", artifact_sha) or not re.fullmatch(r"[0-9a-f]{64}", artifact_fingerprint):
+        return "FAIL", "dynamic recovery evidence artifact identity is malformed"
+
+    expected_metadata = dynamic_runtime_metadata(
+        artifact_sha256=artifact_sha,
+        artifact_fingerprint=artifact_fingerprint,
+        tested_artifact=tested_artifact,
+    )
+    for field, expected in expected_metadata.items():
+        if any(row[field] != expected for row in rows):
+            return "FAIL", f"dynamic recovery evidence does not match current {field}"
+
+    # Before a later overlay is applied, independently re-identify the exact
+    # artifact.  After Phase 10 overlays the same repository path, retain the
+    # separately recorded pre-overlay identity instead of falsely comparing it
+    # with a different stage's workbook.
+    current_match = sha256(MODEL) == artifact_sha
+    if current_match and normalized_fingerprint() != artifact_fingerprint:
+        return "FAIL", "dynamic recovery evidence semantic fingerprint does not match its tested artifact"
+    if custom_evidence and not current_match:
+        return "FAIL", "custom dynamic recovery evidence does not identify the current workbook artifact"
+
+    statuses = {row["status"] for row in rows}
+    if "FAIL" in statuses:
         return "FAIL", "one or more dynamic recovery tests failed"
-    if not all(row.get("status") == "PASS" for row in rows):
-        return "N/D", "dynamic recovery evidence is incomplete"
-    return "PASS", f"{len(rows)} separately recorded dynamic recovery tests"
+    if statuses.intersection({"NOT_RUN", "NOT RUN"}):
+        return "NOT_RUN", "one or more required dynamic recovery tests were not run"
+    if statuses != {"PASS"}:
+        return "FAIL", "dynamic recovery evidence contains an unsupported or incomplete status"
+    return "PASS", (
+        f"{len(rows)} required dynamic recovery cases passed under "
+        f"{DYNAMIC_TEST_DEFINITION_VERSION}"
+    )
 
 
-def write_dynamic_evidence(report: dict[str, object]) -> list[dict[str, object]]:
+def write_dynamic_evidence(
+    report: dict[str, object],
+    evidence_path: Path | None = None,
+    *,
+    tested_artifact: str | None = None,
+) -> list[dict[str, object]]:
+    evidence_path = DYNAMIC_EVIDENCE if evidence_path is None else evidence_path
     tests = report.get("tests", [])
     if report.get("dynamic_status") != "PASS" or not isinstance(tests, list) or not tests:
-        DYNAMIC_EVIDENCE.unlink(missing_ok=True)
+        evidence_path.unlink(missing_ok=True)
         return []
-    rows = [{
-        "evidence_id": f"P9DE-{index:03d}", "test_name": str(item.get("test", "")),
-        "status": str(item.get("status", "N/D")),
-        "observed": json.dumps(item.get("observed"), sort_keys=True, separators=(",", ":")),
-        "engine": str(report.get("engine", "")), "final_scenario": str(report.get("final_scenario", "")),
-        "dynamic_script_sha256": sha256(ROOT / "scripts" / "recalculate-phase9.py"),
-        "workbook_builder_sha256": sha256(ROOT / "scripts" / "build-phase9.mjs"),
-        "source_input_signature": source_signature(),
-        "tested_artifact": "disposable copy of model/Quanex_Credit_Underwriting.xlsx",
-    } for index, item in enumerate(tests, 1)]
-    write_csv(DYNAMIC_EVIDENCE, rows)
+
+    names = [str(item.get("test", "")) for item in tests if isinstance(item, dict)]
+    if len(names) != len(tests) or len(names) != len(set(names)):
+        evidence_path.unlink(missing_ok=True)
+        raise Phase9Error("Dynamic recovery report contains duplicate or malformed test records")
+    required_by_name = {case["test_name"]: case for case in REQUIRED_DYNAMIC_CASES}
+    if set(names) != set(required_by_name) or len(tests) != len(REQUIRED_DYNAMIC_CASES):
+        evidence_path.unlink(missing_ok=True)
+        missing = sorted(set(required_by_name) - set(names))
+        extra = sorted(set(names) - set(required_by_name))
+        raise Phase9Error(f"Dynamic recovery report case set mismatch; missing={missing}; extra={extra}")
+    if any(str(item.get("status", "")) != "PASS" for item in tests):
+        evidence_path.unlink(missing_ok=True)
+        raise Phase9Error("Dynamic recovery report includes a required test that did not PASS")
+    if any("observed" not in item for item in tests):
+        evidence_path.unlink(missing_ok=True)
+        raise Phase9Error("Dynamic recovery report omits observed evidence for a required test")
+
+    current_sha = sha256(MODEL)
+    current_fingerprint = normalized_fingerprint()
+    metadata = dynamic_runtime_metadata(
+        artifact_sha256=current_sha,
+        artifact_fingerprint=current_fingerprint,
+        tested_artifact=tested_artifact,
+    )
+    for field in (
+        "engine", "final_scenario", "tested_artifact", "tested_artifact_sha256",
+        "tested_artifact_semantic_fingerprint",
+    ):
+        if str(report.get(field, "")) != metadata[field]:
+            evidence_path.unlink(missing_ok=True)
+            raise Phase9Error(f"Dynamic recovery report {field} does not identify the current tested artifact")
+
+    observed_by_name = {str(item["test"]): item.get("observed") for item in tests}
+    rows: list[dict[str, object]] = []
+    for index, case in enumerate(REQUIRED_DYNAMIC_CASES, 1):
+        rows.append({
+            "evidence_id": f"P9DE-{index:03d}",
+            **case,
+            "status": "PASS",
+            "observed": json.dumps(observed_by_name[case["test_name"]], sort_keys=True, separators=(",", ":")),
+            **metadata,
+        })
+    write_csv(evidence_path, rows, list(DYNAMIC_EVIDENCE_FIELDS))
     return rows
 
 
@@ -657,6 +953,7 @@ def validate(
     engine_report: dict[str, object] | None = None,
     *,
     require_dynamic: bool = True,
+    write_outputs: bool = True,
 ) -> list[dict[str, object]]:
     assumptions = read_csv(RAW / "RECOVERY_ASSUMPTIONS.csv")
     decisions = read_csv(RAW / "OWNER_REVIEW_DECISIONS.csv")
@@ -682,8 +979,20 @@ def validate(
                          "test_name": name, "status": "PASS" if passed else "FAIL",
                          "observed": observed, "expected": expected})
 
-    add("approved Phase 8 ancestry", is_phase8_descendant(git_head()), git_head(), APPROVED_PHASE8_COMMIT, "checkpoint")
+    current_head = git_head()
+    approved_ancestry = is_phase8_descendant(current_head)
+    add(
+        "approved Phase 8 ancestry", approved_ancestry,
+        "approved ancestor confirmed" if approved_ancestry else current_head,
+        f"{APPROVED_PHASE8_COMMIT} is an ancestor", "checkpoint",
+    )
     add("Phase 8 normalized fingerprint recorded", read_csv(RAW / "STARTING_CHECKPOINT.csv")[0]["phase8_normalized_fingerprint"] == PHASE8_FINGERPRINT, PHASE8_FINGERPRINT, PHASE8_FINGERPRINT, "checkpoint")
+    baseline_status, baseline_observed = phase8_baseline_evidence_state()
+    controls.append({
+        "validation_id": f"P9V-{len(controls)+1:03d}", "category": "checkpoint",
+        "test_name": "actual Phase 8 pre-overlay workbook identity", "status": baseline_status,
+        "observed": baseline_observed, "expected": "PASS against current Phase 8 dynamic evidence",
+    })
     add("six alternative recovery cases", len(cases) == 6, len(cases), 6, "recovery")
     add("methods remain alternatives", {r["method"] for r in cases} == {"going_concern", "asset_realization"}, sorted({r["method"] for r in cases}), "two separate methods", "recovery")
     add("same recovery date and scenario", all(r["valuation_date"] == "2027-12-31" and r["scenario_id"] == "SEVERE_UNMITIGATED" for r in cases), "checked", "2027-12-31 severe", "recovery")
@@ -737,15 +1046,21 @@ def validate(
     add("Phase 8 anchors unchanged", len(phase8_parity) == 15 and all(r["status"] == "PASS" for r in phase8_parity), len(phase8_parity), 15, "workbook")
     failed = [
         row for row in controls
-        if row["status"] == "FAIL" or (require_dynamic and row["status"] != "PASS")
+        if row["status"] == "FAIL"
+        or (
+            row["status"] != "PASS"
+            and (require_dynamic or row["test_name"] != "dynamic recovery tests")
+        )
     ]
-    write_csv(PROCESSED / "VALIDATION_RESULTS.csv", controls)
+    if write_outputs:
+        write_csv(PROCESSED / "VALIDATION_RESULTS.csv", controls)
     if failed:
         raise Phase9Error("Phase 9 validation failed: " + ", ".join(str(r["test_name"]) for r in failed))
     return controls
 
 
 def build_workbook() -> None:
+    verify_phase8_baseline(MODEL)
     with tempfile.TemporaryDirectory(prefix="quanex-phase9-baseline-") as temp_name:
         baseline = Path(temp_name) / "Phase8.xlsx"
         # Phase 8 is regenerated immediately before Phase 9 in the release
@@ -754,18 +1069,32 @@ def build_workbook() -> None:
         # and dynamic-test controls survive the Phase 9 recovery overlay.
         shutil.copy2(MODEL, baseline)
         run_artifact_tool("build", baseline)
+        canonicalize_xlsx(MODEL)
 
 
-def dynamic() -> dict[str, object]:
+def dynamic(
+    evidence_path: Path | None = None,
+    *,
+    tested_artifact: str | None = None,
+) -> dict[str, object]:
     """Run destructive input perturbations only on a disposable workbook copy."""
+    evidence_path = DYNAMIC_EVIDENCE if evidence_path is None else evidence_path
+    tested_artifact = tested_artifact or DYNAMIC_TESTED_ARTIFACT
     with tempfile.TemporaryDirectory(prefix="quanex-phase9-dynamic-") as temp_name:
         copy = Path(temp_name) / MODEL.name
         shutil.copy2(MODEL, copy)
+        tested_artifact_sha256 = sha256(copy)
+        tested_artifact_fingerprint = normalized_fingerprint()
         report = run_libreoffice("dynamic", copy)
+        report["tested_artifact"] = tested_artifact
+        report["tested_artifact_sha256"] = tested_artifact_sha256
+        report["tested_artifact_semantic_fingerprint"] = tested_artifact_fingerprint
     if report.get("dynamic_status") != "PASS":
-        DYNAMIC_EVIDENCE.unlink(missing_ok=True)
+        evidence_path.unlink(missing_ok=True)
         raise Phase9Error("Phase 9 dynamic workbook tests failed")
-    write_dynamic_evidence(report)
+    write_dynamic_evidence(
+        report, evidence_path=evidence_path, tested_artifact=tested_artifact,
+    )
     return report
 
 
@@ -781,28 +1110,13 @@ def visual(preview_dir: Path | None = None) -> dict[str, object]:
 
 
 def normalized_fingerprint() -> str:
-    excluded = {"docProps/core.xml", "xl/calcChain.xml", "xl/sharedStrings.xml"}
-    digest = hashlib.sha256()
-    digest.update(source_signature().encode("ascii"))
-    digest.update((ROOT / "scripts" / "build-phase9.mjs").read_bytes())
-    with zipfile.ZipFile(MODEL) as archive:
-        for name in sorted(archive.namelist()):
-            if name in excluded or (name.startswith("xl/drawings/drawing") and name.endswith(".xml")):
-                continue
-            data = archive.read(name)
-            if name.startswith("xl/charts/chart") and name.endswith(".xml"):
-                axis_ids: dict[bytes, bytes] = {}
-
-                def normalize_axis_id(match: re.Match[bytes]) -> bytes:
-                    original = match.group(2)
-                    if original not in axis_ids:
-                        axis_ids[original] = str(len(axis_ids) + 1).encode("ascii")
-                    return match.group(1) + axis_ids[original] + match.group(3)
-
-                data = re.sub(rb'(<c:(?:axId|crossAx) val=")(\d+)("/>)', normalize_axis_id, data)
-            digest.update(name.encode("utf-8"))
-            digest.update(data)
-    return digest.hexdigest()
+    return semantic_workbook_fingerprint(
+        MODEL,
+        prefix_parts=(
+            source_signature().encode("ascii"),
+            (ROOT / "scripts" / "build-phase9.mjs").read_bytes(),
+        ),
+    )
 
 
 def all_workflow() -> dict[str, object]:
@@ -838,7 +1152,7 @@ def main() -> None:
     elif args.command == "build":
         build_data(); build_workbook(); print(json.dumps({"status": "PASS", "output": str(MODEL.relative_to(ROOT))}))
     elif args.command == "validate":
-        rows = validate(); print(f"Phase 9 validation: PASS ({len(rows)} controls)")
+        rows = validate(write_outputs=False); print(f"Phase 9 validation: PASS ({len(rows)} controls)")
     elif args.command == "dynamic":
         report = dynamic(); print(json.dumps(report, indent=2))
     elif args.command == "visual":

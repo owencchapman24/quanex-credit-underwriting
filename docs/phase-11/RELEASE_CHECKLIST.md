@@ -5,7 +5,8 @@
 - [x] Approved Phase 10 lineage and artifact anchors recorded.
 - [x] Network-free local-clone reproduction implemented.
 - [x] Disposable clone applies repository-local `core.autocrlf=false` before initial checkout; global and system Git configuration remain untouched.
-- [x] Canonical Phase 3 checkout bytes, independent Git metadata, no-hardlinks behavior, fixed 62-path overlay, and temporary-workspace cleanup are regression tested.
+- [x] Canonical Phase 3 checkout bytes, independent Git metadata, no-hardlinks behavior, explicit clean-release and declared-overlay modes, and temporary-workspace cleanup are regression tested.
+- [x] Fresh validation outputs are compared before any later overwrite; validation snapshots are not restored into a reproduction result.
 - [x] Exact comparison required for deterministic text, data, chart, and PDF outputs.
 - [x] Normalized semantic comparison required for the workbook.
 - [x] Excel, LibreOffice, and PDF checks use disposable copies or paths.

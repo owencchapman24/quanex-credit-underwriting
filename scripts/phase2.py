@@ -102,7 +102,9 @@ def write_csv(path: Path, rows: Iterable[dict[str, str]],
               fields: Sequence[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="raise")
+        writer = csv.DictWriter(
+            handle, fieldnames=fields, extrasaction="raise", lineterminator="\n",
+        )
         writer.writeheader()
         writer.writerows(rows)
 
@@ -353,6 +355,24 @@ def supplemental_seed_rows() -> list[dict[str, str]]:
     add("debt", "unamortized_financing_fees", "FY2025", 11040, "SRC-001",
         "FY2025 Form 10-K Note 9, Long-term debt, p. 62", "instant",
         "Contra-debt amount; retained separately from principal.")
+
+    # Append newly sourced diagnostics so existing supplemental record IDs remain
+    # stable. SRC-001 Note 1 separately discloses historical cash paid for
+    # interest. This is not the contractual paid-or-payable denominator and does
+    # not establish closing-LTM coverage.
+    for year, value in {"FY2023": 5737, "FY2024": 10910, "FY2025": 52630}.items():
+        add(
+            "supplemental_cash_flow",
+            "cash_interest_paid_disclosed",
+            year,
+            value,
+            "SRC-001",
+            "FY2025 Form 10-K Note 1, Supplemental Cash Flow Information, p. 55",
+            notes=(
+                "Reported cash paid for interest; separate historical diagnostic. "
+                "Not contractual interest paid or payable and not closing-LTM evidence."
+            ),
+        )
     return rows
 
 
@@ -697,6 +717,26 @@ def build_spread(phase1: list[dict[str, str]],
                            "finance_lease_obligations_principal", "total_debt_principal",
                            "unamortized_financing_fees", "total_debt_carrying_amount"):
                 from_supp(year, "debt", metric)
+
+    # Append the new historical-interest diagnostic so all previously published
+    # spread IDs retain their meaning. Missing FY2021-FY2022 values remain
+    # explicit missing controls and are never converted to zero.
+    for year in YEARS:
+        if (year, "cash_interest_paid_disclosed") in supp:
+            from_supp(year, "cash_flow", "cash_interest_paid_disclosed")
+        else:
+            add(
+                year,
+                "cash_flow",
+                "cash_interest_paid_disclosed",
+                None,
+                "not_determinable_not_zero",
+                "missing_control",
+                "",
+                "",
+                "",
+                "The approved evidence does not contain a separate cash-paid-interest disclosure for this year; absence is not zero.",
+            )
     return rows
 
 
@@ -864,6 +904,13 @@ def build_metrics(spread: list[dict[str, str]], bridges: list[dict[str, str]]) -
     values = spread_index(spread)
     company = final_bridge_values(bridges, "company_adjusted_ebitda")
     lender = final_bridge_values(bridges, "provisional_lender_normalized_ebitda_base")
+    lender_bridge_ids = {
+        year: max(
+            (row for row in bridges if row["fiscal_year"] == year and row["bridge_type"] == "provisional_lender_normalized_ebitda_base"),
+            key=lambda row: int(row["sequence"]),
+        )["bridge_id"]
+        for year in YEARS
+    }
     rows: list[dict[str, str]] = []
 
     def add(year: str, name: str, numerator: Decimal | None,
@@ -884,23 +931,25 @@ def build_metrics(spread: list[dict[str, str]], bridges: list[dict[str, str]]) -
 
     def ratio(year: str, name: str, numerator: Decimal | None,
               denominator: Decimal | None, units: str, calculation: str,
-              require_positive_denominator: bool = False, note: str = "") -> None:
+              require_positive_denominator: bool = False, note: str = "",
+              source_ids: str = "", input_ids: str = "") -> None:
         if numerator is None or denominator is None:
             add(year, name, numerator, denominator, None, units, "not_determinable",
-                "MISSING_INPUT", calculation, note)
+                "MISSING_INPUT", calculation, note, source_ids, input_ids)
         elif require_positive_denominator and denominator <= 0:
             add(year, name, numerator, denominator, None, units, "not_meaningful",
                 "NONPOSITIVE_EBITDA", calculation,
-                note or "Negative or zero EBITDA makes leverage or coverage not meaningful.")
+                note or "Negative or zero EBITDA makes leverage or coverage not meaningful.",
+                source_ids, input_ids)
         elif denominator == 0:
             add(year, name, numerator, denominator, None, units, "not_meaningful",
-                "ZERO_DENOMINATOR", calculation, note)
+                "ZERO_DENOMINATOR", calculation, note, source_ids, input_ids)
         else:
             calculated = numerator / denominator
             if units == "percent":
                 calculated *= 100
             add(year, name, numerator, denominator, calculated,
-                units, "calculated", "", calculation, note)
+                units, "calculated", "", calculation, note, source_ids, input_ids)
 
     for position, year in enumerate(YEARS):
         revenue = dec(values[(year, "revenue")]["value"])
@@ -961,10 +1010,19 @@ def build_metrics(spread: list[dict[str, str]], bridges: list[dict[str, str]]) -
               True, "Not the credit-agreement numerator; eligible cash is not public.")
         ratio(year, "provisional_lender_ebitda_to_interest_expense_proxy", lender[year],
               interest, "turns", "provisional lender EBITDA / GAAP interest expense", True,
-              "Proxy only; cash interest paid or payable is not separately available.")
-        add(year, "ebitda_to_cash_interest", lender[year], None, None, "turns",
-            "not_determinable", "MISSING_CASH_INTEREST", "EBITDA / cash interest paid or payable",
-            "GAAP interest expense is not silently relabeled as contractual cash interest.")
+              "Proxy only; contractual paid-or-payable and closing-LTM cash interest are unavailable. The separately disclosed historical cash-paid amount is presented in its own diagnostic.")
+        add(
+            year,
+            "ebitda_to_cash_interest",
+            lender[year],
+            None,
+            None,
+            "turns",
+            "not_determinable",
+            "MISSING_CASH_INTEREST",
+            "EBITDA / contractual cash interest paid or payable",
+            "Contractual paid-or-payable and closing-LTM cash interest remain unavailable; the separately disclosed historical cash-paid amount is not substituted for this measure.",
+        )
         ratio(year, "current_ratio", current_assets, current_liabilities, "turns",
               "current assets / current liabilities")
         ratio(year, "quick_ratio", cash + ar, current_liabilities, "turns",
@@ -995,6 +1053,24 @@ def build_metrics(spread: list[dict[str, str]], bridges: list[dict[str, str]]) -
             "not_determinable", "MISSING_PURCHASES_DENOMINATOR",
             "average accounts payable / purchases * actual fiscal days",
             "Purchases are not in the approved evidence; revenue or cost of sales is not substituted.")
+
+    # Append the new metric family to preserve all pre-existing Phase 2 metric
+    # IDs. These ratios are historical cash-paid diagnostics only.
+    for year in YEARS:
+        cash_paid_row = values[(year, "cash_interest_paid_disclosed")]
+        cash_paid = dec(cash_paid_row["value"]) if cash_paid_row["value"] else None
+        ratio(
+            year,
+            "historical_lender_ebitda_to_disclosed_cash_interest_paid",
+            lender[year],
+            cash_paid,
+            "turns",
+            "lender-normalized EBITDA / disclosed historical cash interest paid",
+            True,
+            "Historical cash-paid diagnostic only; not contractual interest paid or payable, closing-LTM coverage, or certified covenant compliance.",
+            source_ids=cash_paid_row["source_ids"],
+            input_ids=f"{lender_bridge_ids[year]};{cash_paid_row['spread_id']}",
+        )
     return rows
 
 
@@ -1189,11 +1265,12 @@ credit metrics, and evidence-derived Phase 3 questions. It does not forecast,
 size a refinancing, calculate closing liquidity, produce an official covenant
 calculation, or begin Phase 3.
 
-No new source was added. `SUPPLEMENTAL_FACTS.csv` transcribes balance-sheet
-totals, detailed cash-flow lines, cash roll-forwards, financing flows, and
-FY2021-FY2023 debt principal from SRC-001, SRC-012, and SRC-014 because those
-controls were not fields in the Phase 1 extract. The approved archival URLs and
-publication dates remain in the Phase 1 manifest and ledgers.
+No new source ID was added. `SUPPLEMENTAL_FACTS.csv` transcribes balance-sheet
+totals, detailed cash-flow lines, cash roll-forwards, financing flows,
+FY2021-FY2023 debt principal, and the FY2023-FY2025 cash-paid-interest table
+from SRC-001, SRC-012, and SRC-014 because those controls were not fields in
+the Phase 1 extract. The approved archival URLs and publication dates remain in
+the Phase 1 manifest and ledgers.
 
 ## Layers
 
@@ -1214,10 +1291,13 @@ matching source precision. Comparison to company EBITDA rounded to one decimal
 uses a $0.05 million tolerance. No unexplained plug is permitted.
 
 Free cash flow is CFO plus normalized negative capital expenditures. Cash
-interest is already inside US-GAAP CFO and is not subtracted again. Gross funded
-debt uses principal, including finance leases/other debt; carrying debt is kept
-separate. Net debt using book cash is an analyst comparable, not the contractual
-numerator because eligible cash is not public.
+interest is already inside US-GAAP CFO and is not subtracted again. SRC-001
+separately reports cash paid for interest for FY2023-FY2025; the resulting
+historical coverage diagnostic is not the contractual paid-or-payable measure
+and does not establish closing-LTM coverage. Gross funded debt uses principal,
+including finance leases/other debt; carrying debt is kept separate. Net debt
+using book cash is an analyst comparable, not the contractual numerator because
+eligible cash is not public.
 
 Working-capital days use actual inclusive fiscal days (366 for FY2024; 365 for
 the other displayed years), average balances when an opening year is available,
@@ -1254,6 +1334,7 @@ network access.
         ("Operating income", "operating_income"), ("Net income", "net_income"),
         ("Unadjusted EBITDA", "unadjusted_ebitda"),
         ("CFO", "cash_flow_from_operations"), ("Free cash flow", "free_cash_flow"),
+        ("Cash paid for interest", "cash_interest_paid_disclosed"),
         ("Gross funded debt", "total_debt_principal"),
     )
     for label, metric in table_metrics:
@@ -1286,6 +1367,7 @@ network access.
         ("Gross funded debt / lender-normalized EBITDA", "gross_funded_debt_to_provisional_lender_normalized_ebitda", "x"),
         ("Net debt after book cash / lender-normalized EBITDA", "net_debt_book_cash_to_provisional_lender_ebitda", "x"),
         ("Lender-normalized EBITDA / GAAP interest expense", "provisional_lender_ebitda_to_interest_expense_proxy", "x"),
+        ("Lender-normalized EBITDA / disclosed historical cash interest paid", "historical_lender_ebitda_to_disclosed_cash_interest_paid", "x"),
     ):
         displayed = []
         for year in ("FY2024", "FY2025"):
@@ -1293,7 +1375,7 @@ network access.
             displayed.append(f"{dec(value):.3f}{suffix}" if value else "N/D")
         lines.append(f"| {label} | {displayed[0]} | {displayed[1]} |")
     lines.extend([
-        "", "Net debt after book cash is an analyst diagnostic, not covenant or lender net leverage. GAAP interest expense is only a coverage proxy because cash interest is not separately available.", "",
+        "", "Net debt after book cash is an analyst diagnostic, not covenant or lender net leverage. GAAP interest expense remains a separate proxy. Disclosed FY2023-FY2025 cash paid for interest supports a historical diagnostic only; it is not contractual paid-or-payable interest, closing-LTM coverage, or certified compliance.", "",
         "## Reconciliation conclusion", "",
         f"All {sum(r['status'] == 'PASS' for r in reconciliations)} exact or rounded-tolerance controls pass. Pro forma/reporting comparisons remain intentionally distinct and FY2021-FY2022 acquisition cash flow remains explicitly missing rather than zero. No material statement difference is plugged.", "",
         "## Historical cash-generation observations", "",

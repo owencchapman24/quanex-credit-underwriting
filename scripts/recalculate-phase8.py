@@ -149,7 +149,7 @@ def capture(document) -> list[dict[str, object]]:
         set_cell(document, "Scenario Comparison", f"Z{index}", captured_at)
         set_cell(document, "Scenario Comparison", f"AA{index}", version)
         set_cell(document, "Scenario Comparison", f"AB{index}", source_hash)
-        set_cell(document, "Scenario Comparison", f"AC{index}", float(cell_value(document, "Assumptions", "D7")))
+        set_cell(document, "Scenario Comparison", f"AC{index}", str(cell_value(document, "Assumptions", "D7")))
         captures.append({
             "capture_id": f"P8C-{index-11:03d}", "scenario_name": scenario_name,
             "scenario_id": scenario_id, "captured_at": captured_at, "source_version": version,
@@ -164,7 +164,8 @@ def capture(document) -> list[dict[str, object]]:
             "first_payment_failure": values[16], "common_horizon_ending_debt": values[17],
             "maturity_gap": values[18], "unpaid_obligations": values[19],
         })
-    set_cell(document, "Assumptions", "D4", "Base")
+    if cell_value(document, "Assumptions", "D4") != "Base":
+        set_cell(document, "Assumptions", "D4", "Base")
     document.calculateAll()
     configure_print(document)
     document.calculateAll()
@@ -203,16 +204,94 @@ def workbook_checks(document) -> list[dict[str, object]]:
     ]
 
 
-def dynamic_tests(document) -> dict[str, object]:
+def dynamic_tests(document, desktop, workbook: Path) -> tuple[dict[str, object], object]:
     results: list[dict[str, object]] = []
+
+    def reset_document() -> None:
+        """Reopen the untouched disposable workbook between independent probes."""
+        nonlocal document
+        document.close(True)
+        document = open_workbook(desktop, workbook)
+        document.calculateAll()
 
     def add(name: str, passed: bool, observed: object) -> None:
         results.append({"test": name, "status": "PASS" if passed else "FAIL", "observed": observed})
 
-    set_cell(document, "Assumptions", "D4", "Base")
-    document.calculateAll()
+    def number(sheet: str, address: str) -> float:
+        value = cell_value(document, sheet, address)
+        if not isinstance(value, (int, float)):
+            raise ValueError(f"{sheet}!{address} is not numeric: {value!r}")
+        return float(value)
+
+    def financial_identities() -> dict[str, object]:
+        try:
+            cash_differences: list[float] = []
+            term_differences: list[float] = []
+            revolver_differences: list[float] = []
+            debt_differences: list[float] = []
+            shortfall_differences: list[float] = []
+            for row in range(12, 48):
+                values = {
+                    column: number("Debt Schedule", f"{column}{row}")
+                    for column in (
+                        "J", "K", "L", "M", "N", "O", "P", "Q", "R", "X", "Y", "Z",
+                        "T", "U", "AE", "AF", "AG", "AH", "AI", "AJ", "AP",
+                    )
+                }
+                revolver_before_maturity = values["O"] + values["P"] - values["Q"]
+                expected_term = max(
+                    0.0,
+                    values["J"] - values["K"] - values["L"]
+                    - max(0.0, values["M"] - revolver_before_maturity),
+                )
+                expected_revolver = max(0.0, revolver_before_maturity - values["M"])
+                cash_differences.append(abs(values["AP"]))
+                term_differences.append(abs(values["N"] - expected_term))
+                revolver_differences.append(abs(values["R"] - expected_revolver))
+                debt_differences.extend((
+                    abs(values["X"] - values["N"] - values["R"]),
+                    abs(values["Z"] - values["X"] - values["Y"]),
+                ))
+                shortfall_differences.extend((
+                    abs(values["AF"] - max(0.0, values["AE"] - values["T"])),
+                    abs(values["AH"] - max(0.0, values["AG"] - values["K"])),
+                    abs(values["AJ"] - max(0.0, values["AI"] - values["U"])),
+                ))
+            return {
+                "max_cash_difference": max(cash_differences),
+                "max_term_difference": max(term_differences),
+                "max_revolver_difference": max(revolver_differences),
+                "max_debt_difference": max(debt_differences),
+                "max_shortfall_difference": max(shortfall_differences),
+            }
+        except (TypeError, ValueError) as exc:
+            return {"error": str(exc)}
+
+    def add_identity_test(name: str) -> None:
+        observed = financial_identities()
+        passed = "error" not in observed and all(float(value) <= 0.000001 for value in observed.values())
+        add(name, passed, observed)
+
+    def q2_cfads() -> tuple[float, float, float]:
+        forecast = number("Forecast", "D22")
+        financing = sum(number("Debt Schedule", f"I{row}") for row in range(12, 15))
+        return forecast, financing, financing - forecast
+
+    def add_q2_cfads_test(name: str) -> None:
+        observed = q2_cfads()
+        add(name, abs(observed[2]) <= 0.000001, observed)
+
+    # Do not write the selector when the saved workbook is already in Base.
+    # LibreOffice invalidates the full selected-scenario dependency tree even
+    # for a no-op string write, which can make the following independent live
+    # input probe surface a spurious Err:522.
+    if cell_value(document, "Assumptions", "D4") != "Base":
+        set_cell(document, "Assumptions", "D4", "Base")
+        document.calculateAll()
     baseline = tuple(cell_value(document, "Scenario Comparison", address) for address in ("F5", "I5", "J5", "L5", "P5", "Q5", "X5"))
     historical = document.Sheets.getByName("Historicals").getCellRangeByName("C7:N50").getDataArray()
+    add_identity_test("Base period cash and debt identities reconcile")
+    add_q2_cfads_test("Base Forecast and financing Q2 CFADS reconcile")
     for row, label in ((9, "April 2026"), (10, "July 2026")):
         observed = tuple(cell_value(document, "Covenants", f"{column}{row}") for column in ("G", "I", "L", "V", "X"))
         add(
@@ -233,6 +312,167 @@ def dynamic_tests(document) -> dict[str, object]:
         first_complete_all,
     )
 
+    base_amort = float(cell_value(document, "Assumptions", "D18")); base_gap = float(cell_value(document, "Scenario Comparison", "X5"))
+    base_april_scheduled = number("Debt Schedule", "K14")
+    set_cell(document, "Assumptions", "D18", base_amort + 0.025); document.calculateAll()
+    add("amortization changes maturity gap", float(cell_value(document, "Scenario Comparison", "X5")) < base_gap, cell_value(document, "Scenario Comparison", "X5"))
+    add("April 2026 amortization changes scheduled payment", number("Debt Schedule", "K14") > base_april_scheduled, cell_value(document, "Debt Schedule", "K14"))
+    add_identity_test("Amortization probe period identities reconcile")
+    reset_document()
+
+    base_term = float(cell_value(document, "Assumptions", "D12")); set_cell(document, "Assumptions", "D12", base_term + 5); document.calculateAll()
+    add("term amount changes opening term", abs(float(cell_value(document, "Debt Schedule", "J12")) - (base_term + 5)) < 0.001, cell_value(document, "Debt Schedule", "J12"))
+    add_identity_test("Term-size probe period identities reconcile")
+    reset_document()
+    base_contribution = float(cell_value(document, "Assumptions", "D13")); base_debt = float(cell_value(document, "Transaction", "D17"))
+    set_cell(document, "Assumptions", "D13", base_contribution + 5); document.calculateAll()
+    add("non-debt contribution reduces opening debt", float(cell_value(document, "Transaction", "D17")) < base_debt, cell_value(document, "Transaction", "D17"))
+    add_identity_test("Contribution probe period identities reconcile")
+    reset_document()
+
+    base_spread = float(cell_value(document, "Assumptions", "D20")); base_interest = float(cell_value(document, "Scenario Comparison", "J5"))
+    base_interest_due = sum(number("Debt Schedule", f"AE{row}") for row in range(12, 48))
+    set_cell(document, "Assumptions", "D20", base_spread + 0.01); document.calculateAll()
+    add("interest spread changes cash interest", float(cell_value(document, "Scenario Comparison", "J5")) > base_interest, cell_value(document, "Scenario Comparison", "J5"))
+    spread_interest_due = sum(number("Debt Schedule", f"AE{row}") for row in range(12, 48))
+    add("interest spread changes interest due", spread_interest_due > base_interest_due, spread_interest_due)
+    add("February 2026 spread probe cash identity reconciles", abs(number("Debt Schedule", "AP12")) <= 0.000001, cell_value(document, "Debt Schedule", "AP12"))
+    add("April 2026 spread probe cash identity reconciles", abs(number("Debt Schedule", "AP14")) <= 0.000001, cell_value(document, "Debt Schedule", "AP14"))
+    add_identity_test("Spread probe period identities reconcile")
+    reset_document()
+    set_cell(document, "Assumptions", "D21", -0.10); document.calculateAll()
+    add("EBITDA overlay changes EBITDA", float(cell_value(document, "Scenario Comparison", "F5")) < baseline[0], cell_value(document, "Scenario Comparison", "F5"))
+    add_q2_cfads_test("EBITDA overlay flows through financing Q2 CFADS")
+    add_identity_test("EBITDA overlay period identities reconcile")
+    reset_document()
+    set_cell(document, "Assumptions", "D23", 5); document.calculateAll()
+    add("DSO change reduces CFADS", float(cell_value(document, "Scenario Comparison", "I5")) < baseline[1], cell_value(document, "Scenario Comparison", "I5"))
+    add_q2_cfads_test("DSO overlay flows through financing Q2 CFADS")
+    add_identity_test("DSO overlay period identities reconcile")
+    reset_document()
+
+    set_cell(document, "Assumptions", "D18", 0.10)
+    set_cell(document, "Assumptions", "D20", 0.01)
+    set_cell(document, "Assumptions", "D21", -0.10)
+    set_cell(document, "Assumptions", "D23", 10)
+    document.calculateAll()
+    add_q2_cfads_test("Combined rate amortization EBITDA and DSO probe reconciles Q2 CFADS")
+    add_identity_test("Combined rate amortization EBITDA and DSO period identities reconcile")
+    combined = (
+        number("Scenario Comparison", "X5"), number("Scenario Comparison", "P5"),
+        number("Scenario Comparison", "J5"),
+    )
+    add(
+        "Combined adverse controls worsen financing outputs",
+        combined[0] > float(baseline[6]) or combined[1] < float(baseline[4]) or combined[2] > float(baseline[2]),
+        combined,
+    )
+    reset_document()
+
+    opening_debt = float(cell_value(document, "Transaction", "D17"))
+    exact_adjustment = opening_debt / (3.5 * 225.344) - 1
+    set_cell(document, "Assumptions", "D21", exact_adjustment); document.calculateAll()
+    add("exact leverage boundary is not breach", cell_value(document, "Covenants", "L8") != "BREACH", cell_value(document, "Covenants", "L8"))
+    set_cell(document, "Assumptions", "D21", exact_adjustment - 0.0001); document.calculateAll()
+    add("above leverage boundary breaches", cell_value(document, "Covenants", "L8") == "BREACH", cell_value(document, "Covenants", "L8"))
+    reset_document()
+
+    coverage_warning = number("Assumptions", "D33")
+    liquidity_warning = number("Assumptions", "D34")
+    add(
+        "approved coverage and liquidity warning boundaries retained",
+        abs(coverage_warning - 3.5) <= 0.000001 and abs(liquidity_warning - 75.0) <= 0.000001,
+        (coverage_warning, liquidity_warning),
+    )
+    coverage_measure = number("Covenants", "N12")
+    set_cell(document, "Assumptions", "D33", coverage_measure - 0.0001); document.calculateAll()
+    add("coverage just above warning boundary is compliant", cell_value(document, "Covenants", "R12") == "COMPLIANT", cell_value(document, "Covenants", "R12"))
+    set_cell(document, "Assumptions", "D33", coverage_measure); document.calculateAll()
+    add("coverage at warning boundary is warning", cell_value(document, "Covenants", "R12") == "WARNING", cell_value(document, "Covenants", "R12"))
+    set_cell(document, "Assumptions", "D33", coverage_measure + 0.0001); document.calculateAll()
+    add("coverage just below warning boundary is warning", cell_value(document, "Covenants", "R12") == "WARNING", cell_value(document, "Covenants", "R12"))
+    set_cell(document, "Assumptions", "D33", coverage_warning); document.calculateAll()
+
+    liquidity_measure = number("Liquidity", "P13")
+    set_cell(document, "Assumptions", "D34", liquidity_measure - 0.0001); document.calculateAll()
+    add("liquidity just above warning boundary is compliant", cell_value(document, "Liquidity", "R13") == "COMPLIANT", cell_value(document, "Liquidity", "R13"))
+    set_cell(document, "Assumptions", "D34", liquidity_measure); document.calculateAll()
+    add("liquidity at warning boundary is warning", cell_value(document, "Liquidity", "R13") == "WARNING", cell_value(document, "Liquidity", "R13"))
+    set_cell(document, "Assumptions", "D34", liquidity_measure + 0.0001); document.calculateAll()
+    add("liquidity just below warning boundary is warning", cell_value(document, "Liquidity", "R13") == "WARNING", cell_value(document, "Liquidity", "R13"))
+    set_cell(document, "Assumptions", "D34", liquidity_warning); document.calculateAll()
+
+    set_cell(document, "Assumptions", "D21", -1); document.calculateAll()
+    zero_complete = tuple(cell_value(document, "Covenants", address) for address in ("I12", "O12", "V12", "X12"))
+    add("zero EBITDA with complete inputs is N/M", zero_complete == ("N/M", "N/M", "N/M", "COMPLETE"), zero_complete)
+    reset_document()
+    set_cell(document, "Assumptions", "D21", -2); document.calculateAll()
+    negative_complete = tuple(cell_value(document, "Covenants", address) for address in ("I12", "O12", "V12", "X12"))
+    add("negative EBITDA with complete inputs is N/M", negative_complete == ("N/M", "N/M", "N/M", "COMPLETE"), negative_complete)
+    reset_document()
+
+    base_rate = float(cell_value(document, "Assumptions", "D19")); set_cell(document, "Assumptions", "D19", ""); document.calculateAll()
+    missing_interest = tuple(cell_value(document, "Covenants", address) for address in ("O12", "R12", "V12", "X12"))
+    add("missing due-or-payable interest is N/D", missing_interest == ("N/D", "N/D", "N/D", "INCOMPLETE"), missing_interest)
+    reset_document()
+    set_cell(document, "Assumptions", "D19", 0); document.calculateAll()
+    add("zero due-or-payable interest is N/M", cell_value(document, "Covenants", "O12") == "N/M", cell_value(document, "Covenants", "O12"))
+    reset_document()
+    set_cell(document, "Assumptions", "D19", -0.01); document.calculateAll()
+    add("negative due-or-payable interest is N/M", cell_value(document, "Covenants", "O12") == "N/M", cell_value(document, "Covenants", "O12"))
+    reset_document()
+
+    set_cell(document, "Assumptions", "D25", -500); document.calculateAll()
+    add("liquidity overlay can exhaust revolver", float(cell_value(document, "Scenario Comparison", "P5")) <= 0.001, cell_value(document, "Scenario Comparison", "P5"))
+    tight_shortfall = sum(
+        number("Debt Schedule", f"{column}{row}")
+        for row in range(12, 48) for column in ("AF", "AH", "AJ")
+    )
+    add("tight-liquidity case preserves due versus paid shortfalls", tight_shortfall > 0.001, tight_shortfall)
+    add_identity_test("Tight-liquidity case period identities reconcile")
+    reset_document()
+    base_sweep = float(cell_value(document, "Scenario Comparison", "L5")); set_cell(document, "Assumptions", "D26", 0); document.calculateAll()
+    add("ECF sweep assumption changes sweep", float(cell_value(document, "Scenario Comparison", "L5")) < base_sweep, cell_value(document, "Scenario Comparison", "L5"))
+    reset_document()
+    set_cell(document, "Assumptions", "D24", 400); document.calculateAll()
+    add("cash-floor safeguard suppresses sweep", float(cell_value(document, "Scenario Comparison", "L5")) <= base_sweep, cell_value(document, "Scenario Comparison", "L5"))
+    reset_document()
+
+    def legacy_weighted_signature() -> float:
+        return sum(
+            (row - 11) * number("Assumptions", f"D{row}")
+            for row in range(12, 36)
+        )
+
+    legacy_before = legacy_weighted_signature()
+    debt_before_collision = number("Transaction", "D17")
+    set_cell(document, "Assumptions", "D12", base_term + 5)
+    set_cell(document, "Assumptions", "D13", base_contribution - 7.5)
+    document.calculateAll()
+    legacy_after = legacy_weighted_signature()
+    collision_observed = (
+        legacy_before, legacy_after, number("Assumptions", "D15"),
+        number("Transaction", "D12"), number("Transaction", "D17"),
+        cell_value(document, "Scenario Comparison", "AE12"),
+    )
+    add("legacy weighted input signature collision is reproduced", abs(legacy_after - legacy_before) <= 0.000001, collision_observed)
+    add(
+        "typed input state catches balanced funding collision",
+        abs(number("Transaction", "D12")) <= 0.000001
+        and abs(number("Transaction", "D17") - debt_before_collision - 7.5) <= 0.000001
+        and cell_value(document, "Scenario Comparison", "AE12") == "STALE",
+        collision_observed,
+    )
+    reset_document()
+
+    set_cell(document, "Assumptions", "D12", base_term + 1); document.calculateAll()
+    add("snapshot stale flag activates", cell_value(document, "Scenario Comparison", "AE12") == "STALE", cell_value(document, "Scenario Comparison", "AE12"))
+    reset_document()
+
+    # Scenario-selector probes run only after the live-control probes.  This is a
+    # deliberate hard reset boundary for LibreOffice: changing the selected
+    # scenario invalidates a large set of cached array dependencies, so later
+    # independent probes must not inherit that state.
     set_cell(document, "Assumptions", "D4", "Moderate unmitigated"); document.calculateAll()
     moderate = cell_value(document, "Scenario Comparison", "F5")
     add("scenario selector updates EBITDA", moderate != baseline[0], moderate)
@@ -241,77 +481,35 @@ def dynamic_tests(document) -> dict[str, object]:
     add("severe EBITDA below moderate", isinstance(severe, float) and severe < moderate, severe)
     add("same debt schedule updates", cell_value(document, "Debt Schedule", "D4") == "Severe unmitigated", cell_value(document, "Debt Schedule", "D4"))
     add("historicals remain fixed", historical == document.Sheets.getByName("Historicals").getCellRangeByName("C7:N50").getDataArray(), "unchanged")
+    add_identity_test("Selected severe case period identities reconcile")
+    add_q2_cfads_test("Selected severe case Forecast and financing Q2 CFADS reconcile")
 
-    set_cell(document, "Assumptions", "D4", "Base"); document.calculateAll()
-    base_amort = float(cell_value(document, "Assumptions", "D18")); base_gap = float(cell_value(document, "Scenario Comparison", "X5"))
-    set_cell(document, "Assumptions", "D18", base_amort + 0.025); document.calculateAll()
-    add("amortization changes maturity gap", float(cell_value(document, "Scenario Comparison", "X5")) < base_gap, cell_value(document, "Scenario Comparison", "X5"))
-    set_cell(document, "Assumptions", "D18", base_amort)
-
-    base_term = float(cell_value(document, "Assumptions", "D12")); set_cell(document, "Assumptions", "D12", base_term + 5); document.calculateAll()
-    add("term amount changes opening term", abs(float(cell_value(document, "Debt Schedule", "J12")) - (base_term + 5)) < 0.001, cell_value(document, "Debt Schedule", "J12"))
-    set_cell(document, "Assumptions", "D12", base_term)
-    base_contribution = float(cell_value(document, "Assumptions", "D13")); base_debt = float(cell_value(document, "Transaction", "D17"))
-    set_cell(document, "Assumptions", "D13", base_contribution + 5); document.calculateAll()
-    add("non-debt contribution reduces opening debt", float(cell_value(document, "Transaction", "D17")) < base_debt, cell_value(document, "Transaction", "D17"))
-    set_cell(document, "Assumptions", "D13", base_contribution)
-
-    base_spread = float(cell_value(document, "Assumptions", "D20")); base_interest = float(cell_value(document, "Scenario Comparison", "J5"))
-    set_cell(document, "Assumptions", "D20", base_spread + 0.01); document.calculateAll()
-    add("interest spread changes cash interest", float(cell_value(document, "Scenario Comparison", "J5")) > base_interest, cell_value(document, "Scenario Comparison", "J5"))
-    set_cell(document, "Assumptions", "D20", base_spread)
-    set_cell(document, "Assumptions", "D21", -0.10); document.calculateAll()
-    add("EBITDA overlay changes EBITDA", float(cell_value(document, "Scenario Comparison", "F5")) < baseline[0], cell_value(document, "Scenario Comparison", "F5"))
-    set_cell(document, "Assumptions", "D21", 0)
-    set_cell(document, "Assumptions", "D23", 5); document.calculateAll()
-    add("DSO change reduces CFADS", float(cell_value(document, "Scenario Comparison", "I5")) < baseline[1], cell_value(document, "Scenario Comparison", "I5"))
-    set_cell(document, "Assumptions", "D23", 0)
-
-    opening_debt = float(cell_value(document, "Transaction", "D17"))
-    exact_adjustment = opening_debt / (3.5 * 225.344) - 1
-    set_cell(document, "Assumptions", "D21", exact_adjustment); document.calculateAll()
-    add("exact leverage boundary is not breach", cell_value(document, "Covenants", "L8") != "BREACH", cell_value(document, "Covenants", "L8"))
-    set_cell(document, "Assumptions", "D21", exact_adjustment - 0.0001); document.calculateAll()
-    add("above leverage boundary breaches", cell_value(document, "Covenants", "L8") == "BREACH", cell_value(document, "Covenants", "L8"))
-    set_cell(document, "Assumptions", "D21", -1); document.calculateAll()
-    zero_complete = tuple(cell_value(document, "Covenants", address) for address in ("I12", "O12", "V12", "X12"))
-    add("zero EBITDA with complete inputs is N/M", zero_complete == ("N/M", "N/M", "N/M", "COMPLETE"), zero_complete)
-    set_cell(document, "Assumptions", "D21", -2); document.calculateAll()
-    negative_complete = tuple(cell_value(document, "Covenants", address) for address in ("I12", "O12", "V12", "X12"))
-    add("negative EBITDA with complete inputs is N/M", negative_complete == ("N/M", "N/M", "N/M", "COMPLETE"), negative_complete)
-    set_cell(document, "Assumptions", "D21", 0)
-
-    base_rate = float(cell_value(document, "Assumptions", "D19")); set_cell(document, "Assumptions", "D19", ""); document.calculateAll()
-    missing_interest = tuple(cell_value(document, "Covenants", address) for address in ("O12", "R12", "V12", "X12"))
-    add("missing cash interest is N/D", missing_interest == ("N/D", "N/D", "N/D", "INCOMPLETE"), missing_interest)
-    set_cell(document, "Assumptions", "D19", 0); document.calculateAll()
-    add("zero cash interest is N/M", cell_value(document, "Covenants", "O12") == "N/M", cell_value(document, "Covenants", "O12"))
-    set_cell(document, "Assumptions", "D19", -0.01); document.calculateAll()
-    add("negative cash interest is N/M", cell_value(document, "Covenants", "O12") == "N/M", cell_value(document, "Covenants", "O12"))
-    set_cell(document, "Assumptions", "D19", base_rate)
-
-    set_cell(document, "Assumptions", "D25", -500); document.calculateAll()
-    add("liquidity overlay can exhaust revolver", float(cell_value(document, "Scenario Comparison", "P5")) <= 0.001, cell_value(document, "Scenario Comparison", "P5"))
-    set_cell(document, "Assumptions", "D25", 0)
+    reset_document()
     set_cell(document, "Assumptions", "D4", "Moderate Phase 7 covenant-linked no-waiver"); document.calculateAll()
     add("covenant-linked draw shutoff is visible", str(cell_value(document, "Scenario Comparison", "U5")) not in {"", "N/D"}, cell_value(document, "Scenario Comparison", "U5"))
+    shutoff_rows = [
+        row for row in range(12, 48)
+        if cell_value(document, "Debt Schedule", f"AD{row}") == "SHUTOFF"
+    ]
+    first_shutoff = min(shutoff_rows) if shutoff_rows else None
+    same_period_draw = number("Debt Schedule", f"P{first_shutoff}") if first_shutoff else 0.0
+    post_shutoff_draws = sum(
+        number("Debt Schedule", f"P{row}") for row in shutoff_rows
+        if first_shutoff is not None and row > first_shutoff
+    )
+    add(
+        "no-waiver shutoff prevents new revolver draws",
+        bool(shutoff_rows) and abs(post_shutoff_draws) <= 0.000001,
+        (first_shutoff, same_period_draw, post_shutoff_draws),
+    )
+    add_identity_test("No-waiver stress period identities reconcile")
 
-    set_cell(document, "Assumptions", "D4", "Base"); document.calculateAll()
-    base_sweep = float(cell_value(document, "Scenario Comparison", "L5")); set_cell(document, "Assumptions", "D26", 0); document.calculateAll()
-    add("ECF sweep assumption changes sweep", float(cell_value(document, "Scenario Comparison", "L5")) < base_sweep, cell_value(document, "Scenario Comparison", "L5"))
-    set_cell(document, "Assumptions", "D26", 0.5)
-    set_cell(document, "Assumptions", "D24", 400); document.calculateAll()
-    add("cash-floor safeguard suppresses sweep", float(cell_value(document, "Scenario Comparison", "L5")) <= base_sweep, cell_value(document, "Scenario Comparison", "L5"))
-    set_cell(document, "Assumptions", "D24", 25)
-
-    set_cell(document, "Assumptions", "D12", base_term + 1); document.calculateAll()
-    add("snapshot stale flag activates", cell_value(document, "Scenario Comparison", "AE12") == "STALE", cell_value(document, "Scenario Comparison", "AE12"))
-    set_cell(document, "Assumptions", "D12", base_term); set_cell(document, "Assumptions", "D4", "Base"); document.calculateAll()
+    reset_document()
     restored = tuple(cell_value(document, "Scenario Comparison", address) for address in ("F5", "I5", "J5", "L5", "P5", "Q5", "X5"))
     add("Base parity restored", all(abs(float(a) - float(b)) < 0.002 for a, b in zip(restored, baseline)), restored)
     add("final scenario restored to Base", cell_value(document, "Assumptions", "D4") == "Base", cell_value(document, "Assumptions", "D4"))
     failed = [row for row in results if row["status"] != "PASS"]
-    return {"dynamic_status": "PASS" if not failed else "FAIL", "test_count": len(results), "tests": results}
+    return {"dynamic_status": "PASS" if not failed else "FAIL", "test_count": len(results), "tests": results}, document
 
 
 def main() -> None:
@@ -329,7 +527,8 @@ def main() -> None:
         if mode == "capture":
             output["captures"] = capture(document)
         elif mode == "dynamic":
-            output.update(dynamic_tests(document))
+            dynamic_output, document = dynamic_tests(document, desktop, workbook)
+            output.update(dynamic_output)
         else:
             configure_print(document)
             document.calculateAll()
@@ -341,7 +540,12 @@ def main() -> None:
         print(json.dumps({"mode": mode, "engine": ENGINE, "status": output.get("dynamic_status", "PASS")}))
     finally:
         if document is not None:
-            document.close(True)
+            try:
+                document.close(True)
+            except Exception:
+                # A dynamic probe may have already closed the original document
+                # while reopening the untouched disposable workbook.
+                pass
         if process is not None:
             process.terminate()
             try:

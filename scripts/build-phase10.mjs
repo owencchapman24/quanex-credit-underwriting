@@ -169,8 +169,8 @@ async function applyAuditRemediation(workbook) {
     cv.getRange(`L${row}`).formulas = [[`=IF(G${row}="N/D","N/D",IF(G${row}<=0,"N/M",IF(H${row}>J${row},"BREACH",IF(H${row}>=K${row},"WARNING","COMPLIANT"))))`]];
     cv.getRange(`N${row}`).formulas = [[`=IF(OR(G${row}="N/D",M${row}=""),"",IF(OR(G${row}<=0,M${row}<=0),"",G${row}/M${row}))`]];
     cv.getRange(`O${row}`).formulas = [[`=IF(OR(G${row}="N/D",M${row}=""),"N/D",IF(OR(G${row}<=0,M${row}<=0),"N/M",TEXT(N${row},"0.00x")))`]];
-    cv.getRange(`R${row}`).formulas = [[`=IF(OR(G${row}="N/D",M${row}=""),"N/D",IF(OR(G${row}<=0,M${row}<=0),"N/M",IF(N${row}<P${row},"BREACH",IF(N${row}<Q${row},"WARNING","COMPLIANT"))))`]];
-    cv.getRange(`V${row}`).formulas = [[`=IF(OR(L${row}="N/M",R${row}="N/M"),"N/M",IF(OR(L${row}="N/D",R${row}="N/D"),"N/D",IF(OR(L${row}="BREACH",R${row}="BREACH",T${row}="BREACH"),"BREACH","COMPLIANT")))`]];
+    cv.getRange(`R${row}`).formulas = [[`=IF(OR(G${row}="N/D",M${row}=""),"N/D",IF(OR(G${row}<=0,M${row}<=0),"N/M",IF(N${row}<P${row},"BREACH",IF(N${row}<=Q${row},"WARNING","COMPLIANT"))))`]];
+    cv.getRange(`V${row}`).formulas = [[`=IF(X${row}="INCOMPLETE","N/D",IF(L${row}="N/M","N/M",IF(R${row}="N/M","N/M",IF(L${row}="N/D","N/D",IF(R${row}="N/D","N/D",IF(OR(L${row}="BREACH",R${row}="BREACH",T${row}="BREACH"),"BREACH","COMPLIANT"))))))`]];
     cv.getRange(`X${row}`).formulas = [[`=IF(OR(G${row}="N/D",M${row}=""),"INCOMPLETE","COMPLETE")`]];
     cv.getRange(`AF${row}`).formulas = [[`=IF(OR(G${row}="N/D",G${row}<=0,M${row}="",M${row}<=0),"",G${row}-M${row}*P${row})`]];
   }

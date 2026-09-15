@@ -6,47 +6,212 @@ if (-not $WorkbookPath) { $WorkbookPath = Join-Path $root "model\Quanex_Credit_U
 $source = (Resolve-Path -LiteralPath $WorkbookPath).Path
 $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("quanex-phase9-excel-" + [Guid]::NewGuid().ToString("N"))
 $started = [DateTime]::UtcNow
-$beforePids = @(Get-Process EXCEL -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
 $excel = $null
+$excelPid = $null
+$excelProcessStartUtc = $null
+
+if (-not ("Quanex.ExcelWindowProcess" -as [type])) {
+    Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+namespace Quanex {
+    public static class ExcelWindowProcess {
+        [DllImport("user32.dll")]
+        public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+    }
+}
+"@
+}
+
+function Release-ComObject($value) {
+    if ($null -ne $value -and [Runtime.InteropServices.Marshal]::IsComObject($value)) {
+        [void][Runtime.InteropServices.Marshal]::ReleaseComObject($value)
+    }
+}
+
+function Get-ExcelProcessId($application) {
+    [uint32]$processId = 0
+    [void][Quanex.ExcelWindowProcess]::GetWindowThreadProcessId(
+        [IntPtr]$application.Hwnd, [ref]$processId
+    )
+    if ($processId -eq 0) { throw "Could not identify the disposable Excel process" }
+    return [int]$processId
+}
+
+function Open-Workbook($application, [string]$path) {
+    $books = $null
+    try {
+        $books = $application.Workbooks
+        return $books.Open($path)
+    } finally {
+        Release-ComObject $books
+    }
+}
+
+function Get-Worksheet($book, [string]$name) {
+    $worksheets = $null
+    try {
+        $worksheets = $book.Worksheets
+        return $worksheets.Item($name)
+    } finally {
+        Release-ComObject $worksheets
+    }
+}
+
+function Get-CellSnapshot($sheet, [string]$address) {
+    $cell = $null
+    $validation = $null
+    $style = $null
+    try {
+        $cell = $sheet.Range($address)
+        $validationType = "none"
+        try {
+            $validation = $cell.Validation
+            $validationType = [string]$validation.Type
+        } catch {}
+        $styleName = ""
+        try {
+            $style = $cell.Style
+            $styleName = if ([Runtime.InteropServices.Marshal]::IsComObject($style)) { [string]$style.Name } else { [string]$style }
+        } catch {}
+        return [pscustomobject]@{
+            cell = $address
+            value = $cell.Value2
+            text = [string]$cell.Text
+            number_format = [string]$cell.NumberFormat
+            style = $styleName
+            formula = [string]$cell.Formula
+            has_formula = [bool]$cell.HasFormula
+            validation_type = $validationType
+        }
+    } finally {
+        Release-ComObject $style
+        Release-ComObject $validation
+        Release-ComObject $cell
+    }
+}
+
+function Set-CellValue($sheet, [string]$address, $value) {
+    $cell = $null
+    try {
+        $cell = $sheet.Range($address)
+        $cell.Value2 = $value
+    } finally {
+        Release-ComObject $cell
+    }
+}
+
+function Get-SheetFormulaCount($sheet) {
+    $used = $null
+    $formulas = $null
+    try {
+        $used = $sheet.UsedRange
+        if ($null -eq $used) { throw "Excel returned no UsedRange for worksheet $($sheet.Name)" }
+        try {
+            $formulas = $used.SpecialCells(-4123)
+            return [int]$formulas.Count
+        } catch {
+            if ($_.Exception.HResult -ne -2146827284) { throw }
+            return 0
+        }
+    } finally {
+        Release-ComObject $formulas
+        Release-ComObject $used
+    }
+}
 
 function Get-FormulaCount($book) {
     $count = 0
-    foreach ($sheet in @($book.Worksheets)) {
-        $formulas = $null
-        try {
-            $formulas = $sheet.UsedRange.SpecialCells(-4123)
-            $count += $formulas.Count
-        } catch { if ($_.Exception.HResult -ne -2146827284) { throw } }
-        finally { if ($formulas) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($formulas) } }
+    $worksheets = $null
+    try {
+        $worksheets = $book.Worksheets
+        for ($index = 1; $index -le $worksheets.Count; $index++) {
+            $sheet = $null
+            try {
+                $sheet = $worksheets.Item($index)
+                $count += Get-SheetFormulaCount $sheet
+            } finally {
+                Release-ComObject $sheet
+            }
+        }
+    } finally {
+        Release-ComObject $worksheets
     }
     return $count
 }
 
 function Get-WorkbookErrors($book) {
     $items = @()
-    foreach ($sheet in @($book.Worksheets)) {
-        foreach ($cellType in @(-4123, 2)) {
-            $errors = $null
-            try { $errors = $sheet.UsedRange.SpecialCells($cellType, 16) } catch {}
-            if ($errors) {
-                foreach ($cell in @($errors.Cells)) {
-                    $items += "$($sheet.Name)!$($cell.Address($false,$false))=$([string]$cell.Text)"
-                    [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($cell)
+    $worksheets = $null
+    try {
+        $worksheets = $book.Worksheets
+        for ($sheetIndex = 1; $sheetIndex -le $worksheets.Count; $sheetIndex++) {
+            $sheet = $null
+            try {
+                $sheet = $worksheets.Item($sheetIndex)
+                foreach ($cellType in @(-4123, 2)) {
+                    $used = $null
+                    $errors = $null
+                    try {
+                        $used = $sheet.UsedRange
+                        try { $errors = $used.SpecialCells($cellType, 16) } catch {}
+                        if ($errors) {
+                            $cells = $null
+                            try {
+                                $cells = $errors.Cells
+                                for ($cellIndex = 1; $cellIndex -le $cells.Count; $cellIndex++) {
+                                    $cell = $null
+                                    try {
+                                        $cell = $cells.Item($cellIndex)
+                                        $items += "$($sheet.Name)!$($cell.Address($false,$false))=$([string]$cell.Text)"
+                                    } finally {
+                                        Release-ComObject $cell
+                                    }
+                                }
+                            } finally {
+                                Release-ComObject $cells
+                            }
+                        }
+                    } finally {
+                        Release-ComObject $errors
+                        Release-ComObject $used
+                    }
                 }
-                [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($errors)
+
+                $used = $null
+                $formulas = $null
+                try {
+                    $used = $sheet.UsedRange
+                    try { $formulas = $used.SpecialCells(-4123) } catch {}
+                    if ($formulas) {
+                        $cells = $null
+                        try {
+                            $cells = $formulas.Cells
+                            for ($cellIndex = 1; $cellIndex -le $cells.Count; $cellIndex++) {
+                                $cell = $null
+                                try {
+                                    $cell = $cells.Item($cellIndex)
+                                    if ([string]$cell.Formula -match "#REF!") {
+                                        $items += "$($sheet.Name)!$($cell.Address($false,$false)) formula contains #REF!"
+                                    }
+                                } finally {
+                                    Release-ComObject $cell
+                                }
+                            }
+                        } finally {
+                            Release-ComObject $cells
+                        }
+                    }
+                } finally {
+                    Release-ComObject $formulas
+                    Release-ComObject $used
+                }
+            } finally {
+                Release-ComObject $sheet
             }
         }
-        $formulas = $null
-        try { $formulas = $sheet.UsedRange.SpecialCells(-4123) } catch {}
-        if ($formulas) {
-            foreach ($cell in @($formulas.Cells)) {
-                if ([string]$cell.Formula -match "#REF!") {
-                    $items += "$($sheet.Name)!$($cell.Address($false,$false)) formula contains #REF!"
-                }
-                [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($cell)
-            }
-            [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($formulas)
-        }
+    } finally {
+        Release-ComObject $worksheets
     }
     return @($items | Sort-Object -Unique)
 }
@@ -62,7 +227,15 @@ function Invoke-Calculation($application, $book, [string]$method) {
     switch ($method) {
         "none" { }
         "ribbon_calculate_now" { [void]$application.Calculate() }
-        "calculate_sheet" { [void]$book.Worksheets.Item("Recovery").Calculate() }
+        "calculate_sheet" {
+            $recovery = $null
+            try {
+                $recovery = Get-Worksheet $book "Recovery"
+                [void]$recovery.Calculate()
+            } finally {
+                Release-ComObject $recovery
+            }
+        }
         "f9" { [void]$application.Calculate() }
         "ctrl_alt_f9" { [void]$application.CalculateFull() }
         "ctrl_alt_shift_f9" { [void]$application.CalculateFullRebuild() }
@@ -72,31 +245,20 @@ function Invoke-Calculation($application, $book, [string]$method) {
 }
 
 function Get-InputSnapshot($assumptions, [string]$address) {
-    $cell = $assumptions.Range($address)
-    $validationType = "none"
-    try { $validationType = [string]$cell.Validation.Type } catch {}
-    return [pscustomobject]@{
-        cell = $address
-        value = $cell.Value2
-        text = [string]$cell.Text
-        number_format = [string]$cell.NumberFormat
-        style = [string]$cell.Style.Name
-        formula = [string]$cell.Formula
-        has_formula = [bool]$cell.HasFormula
-        validation_type = $validationType
-    }
+    return Get-CellSnapshot $assumptions $address
 }
 
 function Assert-MultipleInputs($assumptions) {
     foreach ($address in @("I32", "J32", "K32")) {
-        $cell = $assumptions.Range($address)
-        if ($cell.Value2 -isnot [ValueType]) { throw "$address is not numeric" }
-        if ([string]$cell.NumberFormat -notmatch "x" -or [string]$cell.NumberFormat -match "%") {
-            throw "$address does not use a multiple format: $($cell.NumberFormat)"
+        $cell = Get-CellSnapshot $assumptions $address
+        if ($cell.value -isnot [ValueType]) { throw "$address is not numeric" }
+        if ($cell.number_format -notmatch "x" -or $cell.number_format -match "%") {
+            throw "$address does not use a multiple format: $($cell.number_format)"
         }
     }
-    if ([string]$assumptions.Range("J32").Text -ne "4.00x") {
-        throw "J32 initial visible text was not 4.00x: $($assumptions.Range('J32').Text)"
+    $j32 = Get-CellSnapshot $assumptions "J32"
+    if ($j32.text -ne "4.00x") {
+        throw "J32 initial visible text was not 4.00x: $($j32.text)"
     }
 }
 
@@ -105,9 +267,9 @@ function Assert-BaseChain($recovery) {
     foreach ($row in 22..30) { $cells += "E$row" }
     foreach ($row in 39..42) { $cells += "F$row"; $cells += "G$row" }
     foreach ($address in $cells) {
-        $cell = $recovery.Range($address)
-        try { [void][double]$cell.Value2 } catch { throw "Expected numeric Base-chain cell $address; found $($cell.Text)" }
-        if ([string]$cell.Formula -match "#REF!" -or [string]$cell.Text -eq "#REF!") {
+        $cell = Get-CellSnapshot $recovery $address
+        try { [void][double]$cell.value } catch { throw "Expected numeric Base-chain cell $address; found $($cell.text)" }
+        if ($cell.formula -match "#REF!" -or $cell.text -eq "#REF!") {
             throw "Base-chain error at Recovery!$address"
         }
     }
@@ -119,59 +281,77 @@ function Invoke-InteractionCase($application, [string]$method, [bool]$saveAndReo
     $saved = Join-Path $tempRoot ("saved-" + $method + ".xlsx")
     Copy-Item -LiteralPath $source -Destination $candidate
     $book = $null; $reopened = $null
+    $checks = $null; $assumptions = $null; $summary = $null; $recovery = $null
+    $a2 = $null; $r2 = $null
     try {
-        $book = $application.Workbooks.Open($candidate)
-        $checks = $book.Worksheets.Item("Checks")
-        $assumptions = $book.Worksheets.Item("Assumptions")
-        $summary = $book.Worksheets.Item("Credit Summary")
-        $recovery = $book.Worksheets.Item("Recovery")
+        $book = Open-Workbook $application $candidate
+        $checks = Get-Worksheet $book "Checks"
+        $assumptions = Get-Worksheet $book "Assumptions"
+        $summary = Get-Worksheet $book "Credit Summary"
+        $recovery = Get-Worksheet $book "Recovery"
         Assert-MultipleInputs $assumptions
         $initialInputs = @("I32", "J32", "K32") | ForEach-Object { Get-InputSnapshot $assumptions $_ }
         $initialErrors = @(Get-WorkbookErrors $book)
         if ($initialErrors.Count -ne 0) { throw "Initial Excel errors: $($initialErrors -join ', ')" }
         $initialFormulaCount = Get-FormulaCount $book
-        $initialChecksFormulaCount = $checks.UsedRange.SpecialCells(-4123).Count
-        $baseRecovery = [double]$recovery.Range("E28").Value2
-        $baseFormula = [string]$recovery.Range("E28").Formula
+        $initialChecksFormulaCount = Get-SheetFormulaCount $checks
+        $baseRecoveryCell = Get-CellSnapshot $recovery "E28"
+        $baseRecovery = [double]$baseRecoveryCell.value
+        $baseFormula = $baseRecoveryCell.formula
         $chain = Assert-BaseChain $recovery
 
-        $assumptions.Range("J32").Value2 = 4.5
+        Set-CellValue $assumptions "J32" 4.5
         Invoke-Calculation $application $book $method
-        if ([Math]::Abs(([double]$assumptions.Range("J32").Value2) - 4.5) -gt 0.000001) { throw "J32 did not retain numeric 4.5" }
-        if ([string]$assumptions.Range("J32").Text -ne "4.50x") { throw "J32 did not display 4.50x: $($assumptions.Range('J32').Text)" }
-        if ([string]$assumptions.Range("J32").NumberFormat -match "%") { throw "J32 changed to a percentage format" }
-        $changedRecovery = [double]$recovery.Range("E28").Value2
+        $changedJ32 = Get-CellSnapshot $assumptions "J32"
+        if ([Math]::Abs(([double]$changedJ32.value) - 4.5) -gt 0.000001) { throw "J32 did not retain numeric 4.5" }
+        if ($changedJ32.text -ne "4.50x") { throw "J32 did not display 4.50x: $($changedJ32.text)" }
+        if ($changedJ32.number_format -match "%") { throw "J32 changed to a percentage format" }
+        $changedRecoveryCell = Get-CellSnapshot $recovery "E28"
+        $changedRecovery = [double]$changedRecoveryCell.value
         if ([Math]::Abs($changedRecovery - 465.32232829751649) -gt 0.002) { throw "E28 did not recalculate to expected proceeds: $changedRecovery" }
-        if ([string]$recovery.Range("E28").Formula -ne $baseFormula) { throw "E28 formula changed after the input edit" }
+        if ($changedRecoveryCell.formula -ne $baseFormula) { throw "E28 formula changed after the input edit" }
         [void](Assert-BaseChain $recovery)
         $changedErrors = @(Get-WorkbookErrors $book)
         if ($changedErrors.Count -ne 0) { throw "Excel errors after J32 edit: $($changedErrors -join ', ')" }
-        if ([string]$recovery.Range("D45").Value2 -ne "N/D") { throw "Official facility recovery did not remain N/D" }
+        if ((Get-CellSnapshot $recovery "D45").value -ne "N/D") { throw "Official facility recovery did not remain N/D" }
 
-        $assumptions.Range("J32").Value2 = 4.0
+        Set-CellValue $assumptions "J32" 4.0
         Invoke-Calculation $application $book $method
-        $restoredRecovery = [double]$recovery.Range("E28").Value2
+        $restoredRecovery = [double](Get-CellSnapshot $recovery "E28").value
         if ([Math]::Abs($restoredRecovery - $baseRecovery) -gt 0.002) { throw "Restoring J32 did not restore Base proceeds" }
-        if ([string]$assumptions.Range("J32").Text -ne "4.00x") { throw "J32 did not restore the 4.00x display" }
-        if ([string]$assumptions.Range("D4").Value2 -ne "Base") { throw "Workbook scenario changed from Base" }
-        $phase9Failures = $application.WorksheetFunction.CountIf($checks.Range("G42:G58"), "FAIL")
+        if ((Get-CellSnapshot $assumptions "J32").text -ne "4.00x") { throw "J32 did not restore the 4.00x display" }
+        if ((Get-CellSnapshot $assumptions "D4").value -ne "Base") { throw "Workbook scenario changed from Base" }
+        $worksheetFunction = $null
+        $checkRange = $null
+        try {
+            $worksheetFunction = $application.WorksheetFunction
+            $checkRange = $checks.Range("G42:G58")
+            $phase9Failures = $worksheetFunction.CountIf($checkRange, "FAIL")
+        } finally {
+            Release-ComObject $checkRange
+            Release-ComObject $worksheetFunction
+        }
         if ($phase9Failures -ne 0) { throw "Phase 9 terminal checks contain failures" }
 
         $reopenResult = $null
         if ($saveAndReopen) {
             $book.SaveAs($saved, 51)
+            foreach ($item in @($recovery, $summary, $assumptions, $checks)) { Release-ComObject $item }
+            $recovery = $null; $summary = $null; $assumptions = $null; $checks = $null
             $book.Close($false)
-            foreach ($item in @($recovery, $summary, $assumptions, $checks, $book)) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($item) }
+            Release-ComObject $book
             $book = $null
-            $reopened = $application.Workbooks.Open($saved)
-            $a2 = $reopened.Worksheets.Item("Assumptions"); $r2 = $reopened.Worksheets.Item("Recovery")
+            $reopened = Open-Workbook $application $saved
+            $a2 = Get-Worksheet $reopened "Assumptions"; $r2 = Get-Worksheet $reopened "Recovery"
             $reopenedFormulaCount = Get-FormulaCount $reopened
             $reopenedErrors = @(Get-WorkbookErrors $reopened)
             if ($reopenedFormulaCount -ne $initialFormulaCount) { throw "Formula count changed after Excel save/reopen" }
-            if ([string]$a2.Range("J32").Text -ne "4.00x" -or [string]$a2.Range("D4").Value2 -ne "Base") { throw "Save/reopen did not preserve the multiple format or Base" }
-            if ([Math]::Abs(([double]$r2.Range("E28").Value2) - $baseRecovery) -gt 0.002) { throw "Save/reopen changed Base recovery" }
+            $reopenedJ32 = Get-CellSnapshot $a2 "J32"
+            if ($reopenedJ32.text -ne "4.00x" -or (Get-CellSnapshot $a2 "D4").value -ne "Base") { throw "Save/reopen did not preserve the multiple format or Base" }
+            $reopenedRecovery = [double](Get-CellSnapshot $r2 "E28").value
+            if ([Math]::Abs($reopenedRecovery - $baseRecovery) -gt 0.002) { throw "Save/reopen changed Base recovery" }
             if ($reopenedErrors.Count -ne 0) { throw "Errors after Excel save/reopen: $($reopenedErrors -join ', ')" }
-            $reopenResult = [pscustomobject]@{ formula_count = $reopenedFormulaCount; errors = $reopenedErrors.Count; j32_text = [string]$a2.Range("J32").Text; e28 = [double]$r2.Range("E28").Value2 }
+            $reopenResult = [pscustomobject]@{ formula_count = $reopenedFormulaCount; errors = $reopenedErrors.Count; j32_text = $reopenedJ32.text; e28 = $reopenedRecovery }
         }
         return [pscustomobject]@{
             method = $method
@@ -189,8 +369,10 @@ function Invoke-InteractionCase($application, [string]$method, [bool]$saveAndReo
             reopen = $reopenResult
         }
     } finally {
-        if ($reopened) { try { $reopened.Close($false) } catch {}; [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($reopened) }
-        if ($book) { try { $book.Close($false) } catch {}; [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($book) }
+        foreach ($item in @($r2, $a2, $recovery, $summary, $assumptions, $checks)) { Release-ComObject $item }
+        $r2 = $null; $a2 = $null; $recovery = $null; $summary = $null; $assumptions = $null; $checks = $null
+        if ($reopened) { try { $reopened.Close($false) } catch {}; Release-ComObject $reopened; $reopened = $null }
+        if ($book) { try { $book.Close($false) } catch {}; Release-ComObject $book; $book = $null }
     }
 }
 
@@ -201,6 +383,8 @@ try {
     $excel.DisplayAlerts = $false
     $excel.AskToUpdateLinks = $false
     $excel.AutomationSecurity = 3
+    $excelPid = Get-ExcelProcessId $excel
+    $excelProcessStartUtc = (Get-Process -Id $excelPid -ErrorAction Stop).StartTime.ToUniversalTime()
 
     $results = @()
     $results += Invoke-InteractionCase $excel "none" $false
@@ -210,7 +394,7 @@ try {
     $results += Invoke-InteractionCase $excel "ctrl_alt_f9" $false
     $results += Invoke-InteractionCase $excel "ctrl_alt_shift_f9" $true
 
-    $recoveryLogs = @(Get-ChildItem -Path ([IO.Path]::GetTempPath()) -Recurse -Force -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTimeUtc -ge $started -and $_.Name -match "^(error.*\.xml|.*recovery.*\.xml)$" })
+    $recoveryLogs = @(Get-ChildItem -Path $tempRoot -Recurse -Force -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTimeUtc -ge $started -and $_.Name -match "^(error.*\.xml|.*recovery.*\.xml)$" })
     if ($recoveryLogs.Count -ne 0) { throw "Excel generated a recovery log: $($recoveryLogs.FullName -join ', ')" }
     [pscustomobject]@{
         status = "PASS"
@@ -227,10 +411,11 @@ try {
         recovery_logs = 0
     } | ConvertTo-Json -Depth 9
 } finally {
-    if ($excel) { try { $excel.Quit() } catch {}; [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($excel) }
+    if ($excel) { try { $excel.Quit() } catch {}; Release-ComObject $excel; $excel = $null }
     [GC]::Collect(); [GC]::WaitForPendingFinalizers(); Start-Sleep -Milliseconds 500
-    foreach ($process in @(Get-Process EXCEL -ErrorAction SilentlyContinue | Where-Object { $beforePids -notcontains $_.Id })) {
-        Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+    $remainingExcelProcess = if ($excelPid) { Get-Process -Id $excelPid -ErrorAction SilentlyContinue } else { $null }
+    if ($remainingExcelProcess -and $excelProcessStartUtc -and $remainingExcelProcess.StartTime.ToUniversalTime() -eq $excelProcessStartUtc) {
+        Stop-Process -Id $excelPid -Force -ErrorAction SilentlyContinue
     }
     if (Test-Path -LiteralPath $tempRoot) { Remove-Item -LiteralPath $tempRoot -Recurse -Force }
 }

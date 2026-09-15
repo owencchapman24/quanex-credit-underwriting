@@ -128,7 +128,7 @@ def main() -> None:
         phase8.configure_print(document)
         output: dict[str, object] = {"engine": phase8.ENGINE}
         if mode == "dynamic":
-            upstream = phase8.dynamic_tests(document)
+            upstream, document = phase8.dynamic_tests(document, desktop, workbook)
             recovery = dynamic_recovery_tests(document)
             tests = upstream["tests"] + recovery
             output.update({"dynamic_status": "PASS" if all(r["status"] == "PASS" for r in tests) else "FAIL", "test_count": len(tests), "tests": tests})

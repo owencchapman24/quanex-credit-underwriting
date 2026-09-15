@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import ast
 import csv
 import hashlib
 import importlib.util
+import json
 import os
 import re
 import subprocess
@@ -21,109 +21,7 @@ phase11 = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = phase11
 SPEC.loader.exec_module(phase11)
 
-AUTHORITATIVE_REMEDIATION_PATHS = frozenset({
-    "README.md",
-    "data/phase10/processed/COMMITTEE_METRICS.csv",
-    "data/phase10/processed/CONDITIONS_AND_MONITORING.csv",
-    "data/phase10/processed/DECISION_REGISTER.csv",
-    "data/phase10/processed/DELIVERABLE_CONSISTENCY_RESULTS.csv",
-    "data/phase10/processed/RISK_MITIGANT_MATRIX.csv",
-    "data/phase10/processed/VALIDATION_RESULTS.csv",
-    "data/phase10/processed/WORKBOOK_INPUTS.json",
-    "data/phase10/raw/OWNER_REVIEW_DECISIONS.csv",
-    "data/phase10/raw/STARTING_CHECKPOINT.csv",
-    "data/phase11/processed/ARTIFACT_MANIFEST.csv",
-    "data/phase11/processed/REPRODUCIBILITY_RESULTS.csv",
-    "data/phase11/processed/VALIDATION_RESULTS.csv",
-    "data/phase11/raw/STARTING_CHECKPOINT.csv",
-    "data/phase8/processed/AMORTIZATION_SENSITIVITY_RESULTS.csv",
-    "data/phase8/processed/DYNAMIC_TEST_EVIDENCE.csv",
-    "data/phase8/processed/OPENING_DEBT_COMPARISON.csv",
-    "data/phase8/processed/SCENARIO_CAPTURE_RESULTS.csv",
-    "data/phase8/processed/TERM_SIZING_SENSITIVITY.csv",
-    "data/phase8/processed/WORKBOOK_MAP.csv",
-    "data/phase8/processed/WORKBOOK_VALIDATION_RESULTS.csv",
-    "data/phase8/raw/STARTING_CHECKPOINT.csv",
-    "data/phase9/processed/DYNAMIC_RECOVERY_TEST_EVIDENCE.csv",
-    "data/phase9/processed/VALIDATION_RESULTS.csv",
-    "data/phase9/raw/STARTING_CHECKPOINT.csv",
-    "docs/phase-10/DECISION_RATIONALE.md",
-    "docs/phase-10/METHODOLOGY.md",
-    "docs/phase-10/PHASE11_HANDOFF.md",
-    "docs/phase-10/SOURCE_LEDGER.csv",
-    "docs/phase-11/LIMITATIONS.md",
-    "docs/phase-11/METHODOLOGY.md",
-    "docs/phase-11/PHASE12_HANDOFF.md",
-    "docs/phase-11/RELEASE_CHECKLIST.md",
-    "docs/phase-11/REPRODUCIBILITY.md",
-    "docs/phase-11/SOURCE_LEDGER.csv",
-    "docs/phase-7/COVENANT_DESIGN.md",
-    "docs/phase-8/CALCULATION_VALIDATION.md",
-    "docs/phase-8/METHODOLOGY.md",
-    "docs/phase-8/SOURCE_LEDGER.csv",
-    "docs/phase-9/METHODOLOGY.md",
-    "model/Quanex_Credit_Underwriting.xlsx",
-    "reports/committee_brief.md",
-    "reports/committee_brief.pdf",
-    "reports/credit_memo.md",
-    "reports/credit_memo.pdf",
-    "scripts/build-phase10.mjs",
-    "scripts/build-phase8.mjs",
-    "scripts/phase10.py",
-    "scripts/phase11.py",
-    "scripts/phase4.py",
-    "scripts/phase5.py",
-    "scripts/phase6.py",
-    "scripts/phase7.py",
-    "scripts/phase8.py",
-    "scripts/phase9.py",
-    "scripts/recalculate-phase8.py",
-    "scripts/render-phase10.py",
-    "tests/test_audit_remediation.py",
-    "tests/test_phase10.py",
-    "tests/test_phase11.py",
-    "tests/test_phase8.py",
-    "tests/test_phase9.py",
-})
-
-FIRST_GUARD_NEW_EXCEPTIONS = {
-    "data/phase8/processed/SCENARIO_CAPTURE_RESULTS.csv",
-    "data/phase8/raw/STARTING_CHECKPOINT.csv",
-    "data/phase9/raw/STARTING_CHECKPOINT.csv",
-    "docs/phase-9/METHODOLOGY.md",
-}
-
-FIRST_GUARD_PREEXISTING_PATHS = {
-    "docs/phase-7/COVENANT_DESIGN.md",
-    "docs/phase-8/METHODOLOGY.md",
-    "docs/phase-8/CALCULATION_VALIDATION.md",
-    "docs/phase-8/SOURCE_LEDGER.csv",
-    "data/phase8/processed/WORKBOOK_MAP.csv",
-    "data/phase8/processed/WORKBOOK_VALIDATION_RESULTS.csv",
-    "data/phase8/processed/DYNAMIC_TEST_EVIDENCE.csv",
-    "data/phase8/processed/OPENING_DEBT_COMPARISON.csv",
-    "data/phase8/processed/TERM_SIZING_SENSITIVITY.csv",
-    "data/phase8/processed/AMORTIZATION_SENSITIVITY_RESULTS.csv",
-    "data/phase9/processed/DYNAMIC_RECOVERY_TEST_EVIDENCE.csv",
-    "data/phase9/processed/VALIDATION_RESULTS.csv",
-}
-
-ISOLATED_WORKSPACE_EXCEPTIONS = frozenset({
-    "data/phase8/processed/AMORTIZATION_SENSITIVITY_RESULTS.csv",
-    "data/phase8/processed/OPENING_DEBT_COMPARISON.csv",
-    "data/phase8/processed/SCENARIO_CAPTURE_RESULTS.csv",
-    "data/phase8/processed/TERM_SIZING_SENSITIVITY.csv",
-    "data/phase8/processed/WORKBOOK_MAP.csv",
-    "data/phase8/processed/WORKBOOK_VALIDATION_RESULTS.csv",
-    "data/phase8/raw/STARTING_CHECKPOINT.csv",
-    "data/phase9/processed/VALIDATION_RESULTS.csv",
-    "data/phase9/raw/STARTING_CHECKPOINT.csv",
-    "docs/phase-7/COVENANT_DESIGN.md",
-    "docs/phase-8/CALCULATION_VALIDATION.md",
-    "docs/phase-8/METHODOLOGY.md",
-    "docs/phase-8/SOURCE_LEDGER.csv",
-    "docs/phase-9/METHODOLOGY.md",
-})
+ISOLATED_PRIOR_AUTHORIZATION = dict(phase11.phase10.PHASE10_PRIOR_AUTHORIZED_SHA256)
 
 
 def rows(relative: str) -> list[dict[str, str]]:
@@ -139,18 +37,67 @@ def git_config_snapshot(scope: str) -> tuple[int, bytes, bytes]:
     return result.returncode, result.stdout, result.stderr
 
 
-def phase10_first_guard_paths() -> set[str]:
-    tree = ast.parse((ROOT / "tests/test_phase10.py").read_text(encoding="utf-8"))
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "test_prior_analytical_artifacts_unchanged":
-            for child in ast.walk(node):
-                if isinstance(child, ast.Assign) and any(
-                    isinstance(target, ast.Name) and target.id == "allowed" for target in child.targets
-                ):
-                    value = ast.literal_eval(child.value)
-                    if isinstance(value, set):
-                        return value
-    raise AssertionError("Phase 10 first-guard explicit allowed set not found")
+def valid_excel_phase8_report() -> dict[str, object]:
+    identity_cases = {
+        "base", "spread_plus_100bp", "amortization_10_percent",
+        "fy2026_q2_ebitda_plus_10_percent", "dso_plus_10_days",
+        "combined_rate_amortization_ebitda_dso", "tight_liquidity",
+        "no_waiver_stress",
+    }
+    probes: list[dict[str, object]] = []
+    for case in sorted(phase11.EXCEL_PHASE8_REQUIRED_PROBE_CASES):
+        row: dict[str, object] = {"case": case, "status": "PASS"}
+        if case in identity_cases:
+            row["max_identity_difference"] = 0.0
+        if case in {
+            "base", "fy2026_q2_ebitda_plus_10_percent", "dso_plus_10_days",
+            "combined_rate_amortization_ebitda_dso",
+        }:
+            row["q2_cfads_difference"] = 0.0
+        if case == "spread_plus_100bp":
+            row["february_cash_identity"] = 0.0
+            row["april_cash_identity"] = 0.0
+        elif case == "amortization_10_percent":
+            row["april_cash_identity"] = 0.0
+        elif case == "balanced_funding_signature_collision":
+            row["stale_status"] = "STALE"
+        elif case == "warning_threshold_equalities":
+            row["coverage_threshold"] = 3.5
+            row["liquidity_threshold"] = 75.0
+            row["coverage_status"] = "WARNING"
+            row["liquidity_status"] = "WARNING"
+        probes.append(row)
+    return {
+        "status": "PASS", "excel_version": "16.0", "excel_build": "20326",
+        "formula_count": phase11.EXPECTED_FORMULA_COUNT,
+        "live_input_probes": probes, "final_scenario": "Base", "recovery_logs": 0,
+        "freshness_checkpoints": [
+            {
+                "checkpoint": checkpoint,
+                "status": "PASS",
+                "current_capture_count": 9,
+                "stale_capture_count": 0,
+                "checks_freshness_status": "PASS",
+                "checks_stale_status": "PASS",
+            }
+            for checkpoint in (
+                "initial_full_calculation",
+                "pre_save_base_reset",
+                "save_reopen_full_calculation",
+            )
+        ],
+    }
+
+
+def valid_excel_phase9_report() -> dict[str, object]:
+    return {
+        "status": "PASS", "excel_version": "16.0", "excel_build": "20326",
+        "calculation_methods": [
+            {"method": method, "status": "PASS"}
+            for method in sorted(phase11.EXCEL_PHASE9_REQUIRED_METHODS)
+        ],
+        "final_scenario": "Base", "workbook_error_cells": 0, "recovery_logs": 0,
+    }
 
 
 class Phase11ReleaseTests(unittest.TestCase):
@@ -211,57 +158,57 @@ class Phase11ReleaseTests(unittest.TestCase):
 
     def test_reproducibility_controls_pass(self) -> None:
         checks = rows("data/phase11/processed/REPRODUCIBILITY_RESULTS.csv")
-        self.assertEqual(len(checks), 11)
+        self.assertEqual(len(checks), 14)
         self.assertTrue(all(row["status"] == "PASS" for row in checks))
         self.assertTrue(all("No new analytical evidence" in row["notes"] for row in checks))
+        self.assertEqual(len({row["verification_mode"] for row in checks}), 1)
+        self.assertIn(checks[0]["verification_mode"], {phase11.RELEASE_MODE, phase11.OVERLAY_MODE})
 
     def test_phase11_control_source_hashes_are_current(self) -> None:
         ledger = {row["source_path"]: row for row in rows("docs/phase-11/SOURCE_LEDGER.csv")}
-        expected = {
-            "scripts/phase10.py": "59e407f2c164ee00aa19fe52d258fe3c6ac973c7dbcaf26d8bafdefeee581aa2",
-            "tests/test_phase10.py": "f2d1a5f52ef1e3e8c898737e7521e6b8c11b257eb73daab6010769a7a88cd8e8",
-        }
-        for relative in ("scripts/phase10.py", "tests/test_phase10.py", "scripts/phase11.py", "tests/test_phase11.py"):
+        required = (
+            "scripts/phase2.py", "tests/test_phase2.py", "scripts/phase6.py", "tests/test_phase6.py",
+            "scripts/phase7.py", "tests/test_phase7.py", "scripts/phase8.py", "scripts/build-phase8.mjs",
+            "scripts/recalculate-phase8.py", "scripts/validate-phase8-excel.ps1", "tests/test_phase8.py",
+            "scripts/phase9.py", "scripts/validate-phase9-excel.ps1", "tests/test_phase9.py", "scripts/remediation_controls.py", "scripts/workbook_semantics.py",
+            "tests/test_workbook_semantics.py", "scripts/xlsx_package.py", "tests/test_xlsx_package.py", "scripts/phase10.py", "scripts/build-phase10.mjs",
+            "scripts/render-phase10.py", "tests/test_phase10.py", "scripts/phase11.py", "tests/test_phase11.py",
+        )
+        for relative in required:
             self.assertIn(relative, ledger)
             current = hashlib.sha256((ROOT / relative).read_bytes()).hexdigest()
             self.assertEqual(ledger[relative]["sha256"], current)
             self.assertEqual(ledger[relative]["classification"], "repository_control")
             self.assertEqual(ledger[relative]["cutoff_status"], "not_applicable")
-        for relative, digest in expected.items():
-            self.assertEqual(ledger[relative]["sha256"], digest)
 
     def test_canonical_lf_disposable_clone_and_phase3_regeneration(self) -> None:
         global_before = git_config_snapshot("--global")
         system_before = git_config_snapshot("--system")
+        source_config_before = phase11.git_config_digest(ROOT)
         current_head = subprocess.run(
             ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True,
             capture_output=True, check=True,
         ).stdout.strip()
         current_changes = frozenset(phase11.changed_paths())
-        self.assertIn(current_changes, (frozenset(), AUTHORITATIVE_REMEDIATION_PATHS))
-        # A parent disposable clone has already committed the authorized
-        # overlay, so command-scoped Windows status can be logically clean
-        # while the retained checkout bytes still have an approved EOL form.
-        # Reapply the same fixed inventory in the nested clone; never broaden
-        # the production or analytical exception sets.
-        nested_overlay = current_changes or AUTHORITATIVE_REMEDIATION_PATHS
-        # The production verifier invokes this suite with the command-scoped
-        # Windows materialization setting.  The nested clone must still force
-        # canonical bytes for its initial checkout.
+        if current_changes:
+            self.skipTest(
+                "clean-release integration requires a committed candidate; "
+                "pre-commit overlays must be supplied explicitly to the CLI"
+            )
+        release_source = ROOT
         with mock.patch.dict(os.environ, phase11.GIT_WINDOWS_TEXT_ENV, clear=False):
+            release_manifest_before = phase11.repository_manifest(release_source)
+            release_status_before = phase11.git_status(release_source)
             holder, destination = phase11.isolated_clone(
-                source_root=ROOT,
-                expected_head=current_head,
-                overlay_paths=nested_overlay,
-                require_authoritative_inventory=False,
-                require_staged_overlay_exact=bool(current_changes),
+                source_root=release_source, mode=phase11.RELEASE_MODE,
+                selected_commit=current_head, overlay_paths=frozenset(),
             )
         disposable_root = Path(holder.name)
         try:
             self.assertTrue((destination / ".git").is_dir())
-            self.assertNotEqual((destination / ".git").resolve(), (ROOT / ".git").resolve())
+            self.assertNotEqual((destination / ".git").resolve(), (release_source / ".git").resolve())
             self.assertFalse(os.path.samefile(
-                ROOT / phase11.REPRESENTATIVE_LF_CSV,
+                release_source / phase11.REPRESENTATIVE_LF_CSV,
                 destination / phase11.REPRESENTATIVE_LF_CSV,
             ))
             local = subprocess.run(
@@ -269,6 +216,11 @@ class Phase11ReleaseTests(unittest.TestCase):
                 cwd=destination, text=True, capture_output=True, check=True,
             ).stdout.strip()
             self.assertEqual(local, "false")
+            branch = subprocess.run(
+                ["git", "branch", "--show-current"], cwd=destination,
+                text=True, capture_output=True, check=True,
+            ).stdout.strip()
+            self.assertEqual(branch, "main")
             for relative in phase11.PHASE3_PRESERVED_PATHS:
                 checkout = (destination / relative).read_bytes()
                 blob = subprocess.run(
@@ -277,20 +229,40 @@ class Phase11ReleaseTests(unittest.TestCase):
                 ).stdout
                 self.assertEqual(checkout, blob, relative)
                 self.assertNotIn(b"\r\n", checkout, relative)
+            for relative in phase11.PHASE0_STATIC_SOURCE_TEXT_PATHS:
+                checkout = (destination / relative).read_bytes()
+                blob = subprocess.run(
+                    ["git", "show", f"HEAD:{relative}"], cwd=destination,
+                    capture_output=True, check=True,
+                ).stdout
+                self.assertEqual(checkout, blob, relative)
+                self.assertNotIn(b"\r\n", checkout, relative)
+            checkpoint = phase11.phase10.read_csv(
+                destination / "data/phase10/raw/STARTING_CHECKPOINT.csv"
+            )[0]
+            with mock.patch.object(phase11.phase10, "ROOT", destination):
+                self.assertEqual(
+                    phase11.phase10.source_signature(),
+                    checkpoint["source_input_signature"],
+                )
             before = phase11.exact_path_hashes(destination, list(phase11.PHASE3_PRESERVED_PATHS))
             result = subprocess.run(
                 [sys.executable, "-B", "scripts/phase3.py", "validate"],
                 cwd=destination, text=True, capture_output=True,
-                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1", **phase11.GIT_WINDOWS_TEXT_ENV}, check=True,
+                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1", **phase11.GIT_WINDOWS_TEXT_ENV}, check=False,
             )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("PASS", result.stdout + result.stderr)
             after = phase11.exact_path_hashes(destination, list(phase11.PHASE3_PRESERVED_PATHS))
             self.assertEqual(before, after)
         finally:
             holder.cleanup()
         self.assertFalse(disposable_root.exists())
+        self.assertEqual(phase11.repository_manifest(release_source), release_manifest_before)
+        self.assertEqual(phase11.git_status(release_source), release_status_before)
         self.assertEqual(git_config_snapshot("--global"), global_before)
         self.assertEqual(git_config_snapshot("--system"), system_before)
+        self.assertEqual(phase11.git_config_digest(ROOT), source_config_before)
 
     def test_raw_byte_comparison_detects_eol_numeric_and_text_mutations(self) -> None:
         with tempfile.TemporaryDirectory(prefix="quanex-phase11-raw-byte-test-") as temp_name:
@@ -423,19 +395,316 @@ class Phase11ReleaseTests(unittest.TestCase):
         self.assertTrue(output)
         self.assertTrue(all(line.endswith("unset") for line in output))
 
-    def test_changes_stay_within_exact_remediation_inventory(self) -> None:
-        self.assertEqual(len(AUTHORITATIVE_REMEDIATION_PATHS), 62)
-        self.assertEqual(phase11.REMEDIATION_ALLOWED_PATHS, AUTHORITATIVE_REMEDIATION_PATHS)
-        self.assertLessEqual(set(phase11.changed_paths()), phase11.REMEDIATION_ALLOWED_PATHS)
+    def test_clean_release_preflight_accepts_only_selected_clean_head(self) -> None:
+        selected = "a" * 40
+        with mock.patch.object(phase11, "resolve_commit", return_value=selected), mock.patch.object(
+            phase11, "git_head", return_value=selected,
+        ), mock.patch.object(phase11, "changed_paths", return_value=[]):
+            self.assertEqual(
+                phase11.validate_isolation_request(
+                    ROOT, mode=phase11.RELEASE_MODE,
+                    selected_commit=selected, overlay_paths=frozenset(),
+                ),
+                selected,
+            )
+            with self.assertRaisesRegex(phase11.Phase11Error, "does not permit an overlay"):
+                phase11.validate_isolation_request(
+                    ROOT, mode=phase11.RELEASE_MODE,
+                    selected_commit=selected, overlay_paths=frozenset({"README.md"}),
+                )
 
-    def test_phase10_four_path_and_fourteen_path_guards_remain_exact(self) -> None:
-        first_guard = phase10_first_guard_paths()
-        self.assertEqual(first_guard, FIRST_GUARD_PREEXISTING_PATHS | FIRST_GUARD_NEW_EXCEPTIONS)
-        self.assertEqual(first_guard - FIRST_GUARD_PREEXISTING_PATHS, FIRST_GUARD_NEW_EXCEPTIONS)
-        self.assertEqual(len(FIRST_GUARD_NEW_EXCEPTIONS), 4)
-        self.assertEqual(phase11.phase10.AUDIT_REMEDIATION_PRIOR_PHASE_EXCEPTIONS, ISOLATED_WORKSPACE_EXCEPTIONS)
-        self.assertEqual(len(ISOLATED_WORKSPACE_EXCEPTIONS), 14)
-        self.assertLessEqual(FIRST_GUARD_NEW_EXCEPTIONS | ISOLATED_WORKSPACE_EXCEPTIONS, AUTHORITATIVE_REMEDIATION_PATHS)
+    def test_clean_release_preflight_rejects_dirty_source_and_wrong_commit(self) -> None:
+        selected = "a" * 40
+        with mock.patch.object(phase11, "resolve_commit", return_value=selected), mock.patch.object(
+            phase11, "git_head", return_value=selected,
+        ), mock.patch.object(phase11, "changed_paths", return_value=["README.md"]):
+            with self.assertRaisesRegex(phase11.Phase11Error, "pristine source checkout"):
+                phase11.validate_isolation_request(
+                    ROOT, mode=phase11.RELEASE_MODE,
+                    selected_commit=selected, overlay_paths=frozenset(),
+                )
+        with mock.patch.object(phase11, "resolve_commit", return_value=selected), mock.patch.object(
+            phase11, "git_head", return_value="b" * 40,
+        ):
+            with self.assertRaisesRegex(phase11.Phase11Error, "not the source checkout HEAD"):
+                phase11.validate_isolation_request(
+                    ROOT, mode=phase11.RELEASE_MODE,
+                    selected_commit=selected, overlay_paths=frozenset(),
+                )
+
+    def test_overlay_review_requires_exact_explicit_inventory(self) -> None:
+        selected = "a" * 40
+        declared = frozenset({"README.md", "scripts/phase11.py"})
+        with mock.patch.object(phase11, "resolve_commit", return_value=selected), mock.patch.object(
+            phase11, "git_head", return_value=selected,
+        ), mock.patch.object(phase11, "changed_paths", return_value=sorted(declared)):
+            self.assertEqual(
+                phase11.validate_isolation_request(
+                    ROOT, mode=phase11.OVERLAY_MODE,
+                    selected_commit=selected, overlay_paths=declared,
+                ),
+                selected,
+            )
+            with self.assertRaisesRegex(phase11.Phase11Error, "unexpected=.*scripts/phase11.py"):
+                phase11.validate_isolation_request(
+                    ROOT, mode=phase11.OVERLAY_MODE,
+                    selected_commit=selected, overlay_paths=frozenset({"README.md"}),
+                )
+
+    def test_overlay_manifest_is_explicit_normalized_and_unique(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="quanex-phase11-manifest-") as temp_name:
+            manifest = Path(temp_name) / "overlay.txt"
+            manifest.write_text("# reviewed paths\nREADME.md\nscripts/phase11.py\n", encoding="utf-8")
+            self.assertEqual(
+                phase11.read_overlay_manifest(manifest),
+                frozenset({"README.md", "scripts/phase11.py"}),
+            )
+            manifest.write_text("README.md\nREADME.md\n", encoding="utf-8")
+            with self.assertRaisesRegex(phase11.Phase11Error, "duplicate paths"):
+                phase11.read_overlay_manifest(manifest)
+            manifest.write_text("../outside.txt\n", encoding="utf-8")
+            with self.assertRaisesRegex(phase11.Phase11Error, "Invalid overlay path"):
+                phase11.read_overlay_manifest(manifest)
+            manifest.write_text(".git/config\n", encoding="utf-8")
+            with self.assertRaisesRegex(phase11.Phase11Error, "Invalid overlay path"):
+                phase11.read_overlay_manifest(manifest)
+            manifest.write_text(".GIT/config\n", encoding="utf-8")
+            with self.assertRaisesRegex(phase11.Phase11Error, "Invalid overlay path"):
+                phase11.read_overlay_manifest(manifest)
+
+    def test_verification_clone_start_distinguishes_release_and_overlay_heads(self) -> None:
+        selected = "a" * 40
+        overlay_head = "b" * 40
+        self.assertEqual(
+            phase11.validate_verification_clone_start(
+                ROOT, mode=phase11.RELEASE_MODE, resolved_commit=selected,
+                clone_head=selected, clone_status="",
+            ),
+            selected,
+        )
+        with self.assertRaisesRegex(phase11.Phase11Error, "exact-candidate"):
+            phase11.validate_verification_clone_start(
+                ROOT, mode=phase11.RELEASE_MODE, resolved_commit=selected,
+                clone_head=overlay_head, clone_status="",
+            )
+        with mock.patch.object(phase11, "resolve_commit", return_value=selected) as resolve:
+            self.assertEqual(
+                phase11.validate_verification_clone_start(
+                    ROOT, mode=phase11.OVERLAY_MODE, resolved_commit=selected,
+                    clone_head=overlay_head, clone_status="",
+                ),
+                selected,
+            )
+            resolve.assert_called_once_with(ROOT, f"{overlay_head}^")
+        with self.assertRaisesRegex(phase11.Phase11Error, "did not begin clean"):
+            phase11.validate_verification_clone_start(
+                ROOT, mode=phase11.RELEASE_MODE, resolved_commit=selected,
+                clone_head=selected, clone_status=" M README.md",
+            )
+
+    def test_fresh_validation_difference_fails_before_restoration(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="quanex-phase11-fresh-validation-") as temp_name:
+            root = Path(temp_name)
+            relative = "data/phase8/processed/WORKBOOK_VALIDATION_RESULTS.csv"
+            target = root / relative
+            target.parent.mkdir(parents=True)
+            target.write_bytes(b"validation_id,status\nP8V-001,PASS\n")
+            baseline = phase11.exact_path_hashes(root, [relative])
+            changed = b"validation_id,status\nP8V-001,FAIL\n"
+            target.write_bytes(changed)
+            with self.assertRaisesRegex(
+                phase11.Phase11Error,
+                "Fresh validation output differs before any restoration or later overwrite",
+            ):
+                phase11.require_fresh_validation_outputs(
+                    root, baseline, "phase8", (relative,),
+                )
+            self.assertEqual(target.read_bytes(), changed)
+
+    def test_fresh_validation_exact_match_records_step_and_raw_hash(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="quanex-phase11-fresh-validation-") as temp_name:
+            root = Path(temp_name)
+            relative = "data/phase10/processed/VALIDATION_RESULTS.csv"
+            target = root / relative
+            target.parent.mkdir(parents=True)
+            target.write_bytes(b"validation_id,status\nP10V-001,PASS\n")
+            baseline = phase11.exact_path_hashes(root, [relative])
+            records = phase11.require_fresh_validation_outputs(
+                root, baseline, "phase10_validate", (relative,),
+            )
+            self.assertEqual(records[0]["status"], "PASS")
+            self.assertEqual(records[0]["step"], "phase10_validate")
+            self.assertEqual(records[0]["expected_sha256"], records[0]["observed_sha256"])
+
+    def test_git_config_digest_detects_repository_local_mutation(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="quanex-phase11-config-") as temp_name:
+            root = Path(temp_name)
+            subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
+            subprocess.run(["git", "config", "--local", "core.autocrlf", "false"], cwd=root, check=True)
+            before = phase11.git_config_digest(root)
+            subprocess.run(["git", "config", "--local", "core.autocrlf", "true"], cwd=root, check=True)
+            self.assertNotEqual(phase11.git_config_digest(root), before)
+
+    def test_phase8_excel_gate_requires_complete_unique_executed_probes(self) -> None:
+        report = valid_excel_phase8_report()
+        summary = phase11.validate_phase8_excel_report(report)
+        self.assertEqual(summary["probe_count"], 10)
+        self.assertEqual(summary["maximum_identity_difference"], 0.0)
+        self.assertEqual(summary["maximum_reconciliation_difference"], 0.0)
+
+        missing = valid_excel_phase8_report()
+        missing["live_input_probes"] = list(missing["live_input_probes"])[1:]
+        with self.assertRaisesRegex(phase11.Phase11Error, "probe inventory"):
+            phase11.validate_phase8_excel_report(missing)
+
+        duplicate = valid_excel_phase8_report()
+        duplicate["live_input_probes"] = list(duplicate["live_input_probes"]) + [dict(list(duplicate["live_input_probes"])[0])]
+        with self.assertRaisesRegex(phase11.Phase11Error, "probe inventory"):
+            phase11.validate_phase8_excel_report(duplicate)
+
+        failed = valid_excel_phase8_report()
+        list(failed["live_input_probes"])[0]["status"] = "FAIL"
+        with self.assertRaisesRegex(phase11.Phase11Error, "did not pass"):
+            phase11.validate_phase8_excel_report(failed)
+
+        residual = valid_excel_phase8_report()
+        spread = next(row for row in list(residual["live_input_probes"]) if row["case"] == "spread_plus_100bp")
+        spread["february_cash_identity"] = 0.507588746
+        with self.assertRaisesRegex(phase11.Phase11Error, "did not reconcile"):
+            phase11.validate_phase8_excel_report(residual)
+
+        changed_threshold = valid_excel_phase8_report()
+        warning = next(row for row in list(changed_threshold["live_input_probes"]) if row["case"] == "warning_threshold_equalities")
+        warning["coverage_threshold"] = 3.5001
+        with self.assertRaisesRegex(phase11.Phase11Error, "freshness, warning-boundary"):
+            phase11.validate_phase8_excel_report(changed_threshold)
+
+        stale_saved = valid_excel_phase8_report()
+        stale_saved["freshness_checkpoints"][2]["stale_capture_count"] = 9
+        with self.assertRaisesRegex(phase11.Phase11Error, "saved capture-freshness"):
+            phase11.validate_phase8_excel_report(stale_saved)
+
+    def test_phase8_excel_script_declares_required_probes_and_robust_com_cleanup(self) -> None:
+        text = (ROOT / "scripts/validate-phase8-excel.ps1").read_text(encoding="utf-8-sig")
+        for case in phase11.EXCEL_PHASE8_REQUIRED_PROBE_CASES:
+            self.assertIn(f'case = "{case}"', text)
+        self.assertIn("GetWindowThreadProcessId", text)
+        self.assertIn("StartTime.ToUniversalTime()", text)
+        self.assertIn("Get-ChildItem -Path $tempRoot", text)
+        self.assertIn('Assert-CapturesCurrent $scenarioComparison $checks "initial_full_calculation"', text)
+        self.assertIn('Assert-CapturesCurrent $scenarioComparison2 $checks2 "save_reopen_full_calculation"', text)
+        self.assertNotIn("Get-ChildItem -Path ([IO.Path]::GetTempPath())", text)
+
+    def test_phase9_excel_gate_requires_all_documented_calculation_methods(self) -> None:
+        report = valid_excel_phase9_report()
+        summary = phase11.validate_phase9_excel_report(report)
+        self.assertEqual(summary["method_count"], 6)
+        missing = valid_excel_phase9_report()
+        missing["calculation_methods"] = list(missing["calculation_methods"])[1:]
+        with self.assertRaisesRegex(phase11.Phase11Error, "method inventory"):
+            phase11.validate_phase9_excel_report(missing)
+        wrong_engine = valid_excel_phase9_report()
+        wrong_engine["excel_build"] = "unknown"
+        with self.assertRaisesRegex(phase11.Phase11Error, "undocumented engine"):
+            phase11.validate_phase9_excel_report(wrong_engine)
+
+    def test_phase9_excel_script_uses_scoped_cleanup_and_its_own_process_id(self) -> None:
+        text = (ROOT / "scripts/validate-phase9-excel.ps1").read_text(encoding="utf-8-sig")
+        self.assertIn("GetWindowThreadProcessId", text)
+        self.assertIn("Get-ChildItem -Path $tempRoot", text)
+        self.assertNotIn("Get-ChildItem -Path ([IO.Path]::GetTempPath())", text)
+        self.assertNotIn("$beforePids", text)
+        self.assertNotIn("Where-Object { $beforePids -notcontains $_.Id }", text)
+        self.assertIn("StartTime.ToUniversalTime()", text)
+
+    def test_engine_gates_reject_repository_status_or_config_mutation(self) -> None:
+        common = (
+            mock.patch.object(phase11, "sha256", return_value="model-hash"),
+            mock.patch.object(phase11.phase10, "libreoffice_report_on_copy", return_value={"engine": "LibreOffice 26.8.0.3"}),
+            mock.patch.object(
+                phase11.phase10, "excel_validation_on_copy",
+                side_effect=[json.dumps(valid_excel_phase8_report()), json.dumps(valid_excel_phase9_report())],
+            ),
+            mock.patch.object(phase11, "run", return_value=json.dumps({"status": "PASS"})),
+            mock.patch.object(phase11.phase10, "pdf_metadata", return_value={}),
+        )
+        with common[0], common[1], common[2], common[3], common[4], mock.patch.object(
+            phase11, "git_status", side_effect=["", " M workbook.xlsx"],
+        ), mock.patch.object(phase11, "git_head", return_value="a" * 40), mock.patch.object(
+            phase11, "git_config_digest", return_value="config-hash",
+        ):
+            with self.assertRaisesRegex(phase11.Phase11Error, "changed repository status"):
+                phase11.engine_gates()
+
+        with mock.patch.object(phase11, "sha256", return_value="model-hash"), mock.patch.object(
+            phase11.phase10, "libreoffice_report_on_copy", return_value={"engine": "LibreOffice 26.8.0.3"},
+        ), mock.patch.object(
+            phase11.phase10, "excel_validation_on_copy",
+            side_effect=[json.dumps(valid_excel_phase8_report()), json.dumps(valid_excel_phase9_report())],
+        ), mock.patch.object(phase11, "run", return_value=json.dumps({"status": "PASS"})), mock.patch.object(
+            phase11.phase10, "pdf_metadata", return_value={},
+        ), mock.patch.object(phase11, "git_status", return_value=""), mock.patch.object(
+            phase11, "git_head", return_value="a" * 40,
+        ), mock.patch.object(phase11, "git_config_digest", side_effect=["before", "after"]):
+            with self.assertRaisesRegex(phase11.Phase11Error, "changed Git configuration"):
+                phase11.engine_gates()
+
+    def test_reproduction_fails_at_the_step_that_changes_validation_output(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="quanex-phase11-reproduction-") as temp_name:
+            root = Path(temp_name)
+            relative = "data/phase8/processed/WORKBOOK_VALIDATION_RESULTS.csv"
+            target = root / relative
+            target.parent.mkdir(parents=True)
+            target.write_bytes(b"validation_id,status\nP8V-001,PASS\n")
+            model = root / "model.xlsx"
+            model.write_bytes(b"fixture workbook")
+
+            def changed_run(command: list[str], **kwargs: object) -> str:
+                target.write_bytes(b"validation_id,status\nP8V-001,FAIL\n")
+                return "synthetic phase8 PASS"
+
+            metadata = {
+                "sha256": hashlib.sha256(model.read_bytes()).hexdigest(),
+                "normalized_fingerprint": "fixture",
+            }
+            with mock.patch.object(phase11, "ROOT", root), mock.patch.object(
+                phase11, "MODEL", model,
+            ), mock.patch.object(
+                phase11, "deterministic_prior_paths", return_value=[relative],
+            ), mock.patch.object(
+                phase11, "BUILD_SEQUENCE", (("phase8", ["synthetic"]),),
+            ), mock.patch.object(
+                phase11, "FRESH_VALIDATION_BY_STEP", {"phase8": (relative,)},
+            ), mock.patch.object(
+                phase11, "run", side_effect=changed_run,
+            ), mock.patch.object(
+                phase11.phase10, "workbook_metadata", return_value=metadata,
+            ):
+                with self.assertRaisesRegex(
+                    phase11.Phase11Error,
+                    "step=phase8; path=data/phase8/processed/WORKBOOK_VALIDATION_RESULTS.csv",
+                ):
+                    phase11.reproduction_in_current_clone()
+            self.assertIn(b"FAIL", target.read_bytes())
+
+    def test_phase10_prior_phase_remediation_guard_remains_bounded(self) -> None:
+        authorization = phase11.phase10.PHASE10_PRIOR_AUTHORIZED_SHA256
+        self.assertEqual(authorization, ISOLATED_PRIOR_AUTHORIZATION)
+        self.assertEqual(len(authorization), 45)
+        expected_counts = {
+            "data/phase2/": 4, "docs/phase-2/": 3,
+            "data/phase6/": 3, "docs/phase-6/": 2,
+            "data/phase7/": 5, "docs/phase-7/": 3,
+            "data/phase8/": 10, "docs/phase-8/": 5,
+            "data/phase9/": 7, "docs/phase-9/": 3,
+        }
+        for prefix, expected in expected_counts.items():
+            self.assertEqual(
+                sum(path.startswith(prefix) for path in authorization),
+                expected,
+                prefix,
+            )
+        self.assertEqual(set(phase11.phase10.authorized_prior_paths()), set(authorization))
 
     def test_unrelated_prior_phase_change_is_rejected(self) -> None:
         unrelated = "data/phase7/processed/UNRELATED_ANALYTICAL_CHANGE.csv"
@@ -448,12 +717,10 @@ class Phase11ReleaseTests(unittest.TestCase):
             phase11.phase10.require_clean_isolated_baseline(unrelated)
         with mock.patch.object(phase11, "changed_paths", return_value=[unrelated]):
             with self.assertRaisesRegex(phase11.Phase11Error, "unexpected=.*UNRELATED_ANALYTICAL_CHANGE"):
-                phase11.require_exact_remediation_inventory(ROOT, AUTHORITATIVE_REMEDIATION_PATHS)
+                phase11.require_exact_overlay_inventory(ROOT, frozenset())
 
     def test_phase3_files_are_never_remediation_exceptions(self) -> None:
-        self.assertTrue(set(phase11.PHASE3_PRESERVED_PATHS).isdisjoint(AUTHORITATIVE_REMEDIATION_PATHS))
-        self.assertTrue(set(phase11.PHASE3_PRESERVED_PATHS).isdisjoint(ISOLATED_WORKSPACE_EXCEPTIONS))
-        self.assertTrue(set(phase11.PHASE3_PRESERVED_PATHS).isdisjoint(FIRST_GUARD_NEW_EXCEPTIONS))
+        self.assertTrue(set(phase11.PHASE3_PRESERVED_PATHS).isdisjoint(ISOLATED_PRIOR_AUTHORIZATION))
 
     def test_phase12_is_absent(self) -> None:
         for path in (ROOT / "data/phase12", ROOT / "docs/phase-12", ROOT / "scripts/phase12.py", ROOT / "tests/test_phase12.py"):
@@ -474,7 +741,7 @@ class Phase11ReleaseTests(unittest.TestCase):
                 "external_links": 0, "formula_errors": 0, "checks_dependencies": 0,
             },
         ):
-            checks = phase11.validate()
+            checks = phase11.validate(allowed_changes=frozenset(phase11.changed_paths()))
         after = phase11.repository_manifest()
         self.assertTrue(all(row["status"] == "PASS" for row in checks))
         self.assertEqual(before, after)
@@ -487,6 +754,208 @@ class Phase11ReleaseTests(unittest.TestCase):
             text = (ROOT / "scripts" / name).read_text(encoding="utf-8-sig")
             self.assertIn("Copy-Item -LiteralPath $source", text)
             self.assertNotIn("Workbooks.Open($source)", text)
+
+    def test_phase11_build_expands_only_its_fixed_generated_inventory(self) -> None:
+        declared = frozenset({"README.md"})
+        current = set(declared)
+        events: list[str] = []
+
+        def preflight(*args: object, **kwargs: object) -> str:
+            self.assertEqual(current, set(declared))
+            events.append("preflight")
+            return "a" * 40
+
+        def reproduce(*args: object, **kwargs: object) -> dict[str, object]:
+            self.assertEqual(current, set(declared))
+            events.append("reproduce")
+            return {"exact_paths_compared": 1}
+
+        def write(path: Path, *args: object, **kwargs: object) -> None:
+            self.assertIn("reproduce", events)
+            current.add(path.relative_to(ROOT).as_posix())
+            events.append("write")
+
+        validation_inventories: list[frozenset[str]] = []
+
+        def validate(*, write_output: bool, allowed_changes: frozenset[str]) -> list[dict[str, object]]:
+            self.assertTrue(write_output)
+            self.assertEqual(allowed_changes, frozenset(current))
+            validation_inventories.append(allowed_changes)
+            current.add("data/phase11/processed/VALIDATION_RESULTS.csv")
+            return [{"status": "PASS"}]
+
+        one_row = [{"status": "PASS"}]
+        with mock.patch.object(phase11, "validate_isolation_request", side_effect=preflight), mock.patch.object(
+            phase11, "run_isolated_reproduction", side_effect=reproduce,
+        ), mock.patch.object(phase11, "repository_paths", return_value=[]), mock.patch.object(
+            phase11, "changed_paths", side_effect=lambda root=ROOT: sorted(current),
+        ), mock.patch.object(phase11, "write_csv", side_effect=write), mock.patch.object(
+            phase11, "dependency_rows", return_value=one_row,
+        ), mock.patch.object(phase11, "link_rows", return_value=one_row), mock.patch.object(
+            phase11, "source_ledger_rows", return_value=one_row,
+        ), mock.patch.object(phase11, "artifact_rows", return_value=one_row), mock.patch.object(
+            phase11, "reproduction_rows", return_value=one_row,
+        ), mock.patch.object(phase11, "validate", side_effect=validate):
+            result = phase11.build_outputs(base_commit="a" * 40, overlay_paths=declared)
+
+        self.assertEqual(events[:2], ["preflight", "reproduce"])
+        self.assertEqual(len(validation_inventories), 2)
+        self.assertEqual(
+            frozenset(current) - declared,
+            phase11.PHASE11_GENERATED_OUTPUT_PATHS,
+        )
+        self.assertEqual(result["status"], "PASS")
+
+    def test_phase11_build_inventory_rejects_arbitrary_new_path(self) -> None:
+        declared = frozenset({"README.md"})
+        with mock.patch.object(
+            phase11, "changed_paths",
+            return_value=["README.md", "unreviewed-output.txt"],
+        ):
+            with self.assertRaisesRegex(phase11.Phase11Error, "outside its fixed output inventory"):
+                phase11.phase11_build_change_inventory(declared)
+
+    def test_phase11_build_protects_maintained_phase11_sources(self) -> None:
+        declared = frozenset({"README.md"})
+        one_row = [{"status": "PASS"}]
+        protected = "docs/phase-11/METHODOLOGY.md"
+        with mock.patch.object(
+            phase11, "validate_isolation_request", return_value="a" * 40,
+        ), mock.patch.object(
+            phase11, "run_isolated_reproduction",
+            return_value={"exact_paths_compared": 1},
+        ), mock.patch.object(
+            phase11, "repository_paths", return_value=[protected],
+        ), mock.patch.object(
+            phase11, "sha256", side_effect=["before", "after"],
+        ), mock.patch.object(
+            phase11, "changed_paths", return_value=sorted(declared),
+        ), mock.patch.object(phase11, "write_csv"), mock.patch.object(
+            phase11, "dependency_rows", return_value=one_row,
+        ), mock.patch.object(phase11, "link_rows", return_value=one_row), mock.patch.object(
+            phase11, "source_ledger_rows", return_value=one_row,
+        ), mock.patch.object(phase11, "artifact_rows", return_value=one_row), mock.patch.object(
+            phase11, "reproduction_rows", return_value=one_row,
+        ), mock.patch.object(phase11, "validate", return_value=one_row):
+            with self.assertRaisesRegex(phase11.Phase11Error, "modified protected files"):
+                phase11.build_outputs(base_commit="a" * 40, overlay_paths=declared)
+
+    def test_clean_clone_eol_profile_preserves_phase11_source_blobs(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="quanex-phase11-eol-scope-") as temp_name:
+            root = Path(temp_name)
+            subprocess.run(["git", "init", "-b", "main"], cwd=root, check=True, capture_output=True)
+            files = {
+                "README.md": b"# Readme\nline\n",
+                "reports/credit_memo.md": b"# Memo\nline\n",
+                "data/phase10/processed/input.json": b'{"value": 1}\n',
+                "docs/phase-10/METHODOLOGY.md": b"# Phase 10\nline\n",
+                "docs/phase-0/CASE_CHARTER.md": b"# Charter\nline\n",
+                "docs/phase-0/EXISTING_FINANCING.md": b"# Financing\nline\n",
+                "docs/phase-11/METHODOLOGY.md": b"# Phase 11\nline\n",
+            }
+            for relative, content in files.items():
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content)
+            subprocess.run(["git", "add", "."], cwd=root, check=True, capture_output=True)
+            subprocess.run(
+                ["git", "-c", "user.name=Release Test", "-c", "user.email=release@example.invalid",
+                 "commit", "-m", "fixture"],
+                cwd=root, check=True, capture_output=True,
+            )
+            phase11_blob = subprocess.run(
+                ["git", "show", "HEAD:docs/phase-11/METHODOLOGY.md"],
+                cwd=root, check=True, capture_output=True,
+            ).stdout
+
+            converted = phase11._materialize_windows_generation_eols(
+                root, overlay_paths=frozenset(),
+            )
+
+            self.assertNotIn("docs/phase-11/METHODOLOGY.md", converted)
+            self.assertEqual(
+                (root / "docs/phase-11/METHODOLOGY.md").read_bytes(),
+                phase11_blob,
+            )
+            self.assertNotIn(b"\r\n", phase11_blob)
+            for relative in files:
+                if (
+                    relative.startswith("docs/phase-11/")
+                    or relative in phase11.PHASE0_STATIC_SOURCE_TEXT_PATHS
+                ):
+                    blob = subprocess.run(
+                        ["git", "show", f"HEAD:{relative}"], cwd=root,
+                        check=True, capture_output=True,
+                    ).stdout
+                    self.assertNotIn(relative, converted)
+                    self.assertEqual((root / relative).read_bytes(), blob)
+                    continue
+                self.assertIn(relative, converted)
+                self.assertIn(b"\r\n", (root / relative).read_bytes())
+
+    def test_reproduction_requires_raw_workbook_exactness_without_restoration(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="quanex-phase11-xlsx-exact-") as temp_name:
+            root = Path(temp_name)
+            model = root / "model" / "Quanex_Credit_Underwriting.xlsx"
+            model.parent.mkdir(parents=True)
+            model.write_bytes(b"approved-canonical-workbook")
+            metadata = {
+                "sha256": "0" * 64, "size_bytes": 1,
+                "normalized_fingerprint": "approved-fingerprint",
+                "sheet_count": 14, "formula_count": 3473, "chart_count": 7,
+                "saved_scenario": "Base", "external_links": 0,
+                "formula_errors": 0, "checks_dependencies": 0,
+            }
+
+            def mutate(command: list[str], **kwargs: object) -> str:
+                model.write_bytes(b"different-workbook-package")
+                return "PASS"
+
+            with mock.patch.object(phase11, "ROOT", root), mock.patch.object(
+                phase11, "MODEL", model,
+            ), mock.patch.object(
+                phase11, "deterministic_prior_paths",
+                return_value=["model/Quanex_Credit_Underwriting.xlsx"],
+            ), mock.patch.object(
+                phase11, "BUILD_SEQUENCE", (("workbook", ["fixture"]),),
+            ), mock.patch.object(
+                phase11, "FRESH_VALIDATION_BY_STEP", {},
+            ), mock.patch.object(
+                phase11, "run", side_effect=mutate,
+            ), mock.patch.object(
+                phase11.phase10, "workbook_metadata", return_value=metadata,
+            ), mock.patch.object(
+                phase11, "APPROVED_WORKBOOK_FINGERPRINT", "approved-fingerprint",
+            ):
+                with self.assertRaisesRegex(phase11.Phase11Error, "Exact reproducibility failed"):
+                    phase11.reproduction_in_current_clone()
+            self.assertEqual(model.read_bytes(), b"different-workbook-package")
+
+    def test_deterministic_release_paths_include_canonical_workbook(self) -> None:
+        candidates = [
+            "README.md", "model/Quanex_Credit_Underwriting.xlsx",
+            "reports/credit_memo.pdf", "scripts/phase11.py",
+        ]
+        with mock.patch.object(phase11, "repository_paths", return_value=candidates):
+            selected = phase11.deterministic_prior_paths(ROOT)
+        self.assertIn("model/Quanex_Credit_Underwriting.xlsx", selected)
+        self.assertNotIn("scripts/phase11.py", selected)
+
+    def test_phase10_fresh_output_inventory_excludes_prior_phase_validation_records(self) -> None:
+        phase10_outputs = set(phase11.FRESH_VALIDATION_BY_STEP["phase10_build"])
+        self.assertEqual(phase10_outputs, {
+            "data/phase10/processed/VALIDATION_RESULTS.csv",
+            "data/phase10/processed/FINAL_WORKBOOK_PHASE8_DYNAMIC_EVIDENCE.csv",
+            "data/phase10/processed/FINAL_WORKBOOK_PHASE9_DYNAMIC_EVIDENCE.csv",
+        })
+        self.assertNotIn(
+            "data/phase8/processed/WORKBOOK_VALIDATION_RESULTS.csv",
+            phase10_outputs,
+        )
+        self.assertNotIn(
+            "data/phase9/processed/VALIDATION_RESULTS.csv",
+            phase10_outputs,
+        )
 
     def test_validation_results_pass(self) -> None:
         checks = rows("data/phase11/processed/VALIDATION_RESULTS.csv")

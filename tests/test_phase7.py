@@ -363,6 +363,31 @@ class Phase7Tests(unittest.TestCase):
         )
         self.assertEqual(result, "breached")
 
+    def test_57a_minimum_warning_boundaries_are_inclusive(self) -> None:
+        for warning, covenant in (
+            (Decimal("3.50"), Decimal("3.00")),
+            (Decimal("75"), Decimal("50")),
+        ):
+            increment = Decimal("0.000001")
+            self.assertEqual(
+                phase7.minimum_measure_status(warning + increment, warning, covenant),
+                "compliant",
+            )
+            self.assertEqual(
+                phase7.minimum_measure_status(warning, warning, covenant),
+                "warning",
+            )
+            self.assertEqual(
+                phase7.minimum_measure_status(warning - increment, warning, covenant),
+                "warning",
+            )
+
+    def test_57b_minimum_measure_missing_remains_unavailable(self) -> None:
+        self.assertEqual(
+            phase7.minimum_measure_status(phase7.N_D_VALUE, Decimal("3.50"), Decimal("3.00")),
+            phase7.N_D,
+        )
+
     def test_58_missing_zero_negative_denominators_are_distinct(self) -> None:
         self.assertEqual(phase7.coverage_ratio(Decimal("10"), None), phase7.N_D_VALUE)
         self.assertEqual(phase7.coverage_ratio(Decimal("10"), Decimal("0")), phase7.N_M)
@@ -417,7 +442,8 @@ class Phase7Tests(unittest.TestCase):
             "ttm_lender_base_ebitda", "gross_funded_debt", "gross_funded_leverage",
             "contractual_leverage_limit", "analyst_leverage_warning",
             "leverage_ratio_headroom", "leverage_debt_headroom",
-            "leverage_break_even_ebitda", "ltm_cash_interest", "interest_coverage",
+            "leverage_break_even_ebitda", "ltm_cash_interest_due_or_payable",
+            "ltm_cash_interest_paid", "interest_coverage",
             "contractual_interest_coverage_minimum", "analyst_coverage_warning",
             "usable_liquidity", "contractual_minimum_liquidity",
             "analyst_liquidity_warning", "operating_cash", "operating_cash_floor",
@@ -578,6 +604,73 @@ class Phase7Tests(unittest.TestCase):
         stale_status = "pending_owner_" + "decision"
         for path in phase7.generated_files():
             self.assertNotIn(stale_status, path.read_text(encoding="utf-8"))
+
+    def test_85_severe_no_waiver_coverage_uses_due_not_paid(self) -> None:
+        selected = next(
+            candidate for candidate in phase7.candidate_definitions()
+            if candidate.candidate_id == "STR-008"
+        )
+        scenario_id = "SEVERE_PHASE7_COVENANT_NO_WAIVER"
+        monthly, _ = phase7.model_covenant_linked_no_waiver(
+            selected, scenario_id, "SEVERE_UNMITIGATED", phase7.leverage_limit,
+        )
+        covenant_tests, _ = phase7.build_covenant_tests({scenario_id: monthly})
+        target = next(row for row in covenant_tests if row["period_end"] == "2028-01-31")
+        self.assertAlmostEqual(
+            float(target["ltm_cash_interest_due_or_payable"]),
+            69.6869148017191,
+            places=10,
+        )
+        self.assertAlmostEqual(float(target["ltm_cash_interest_paid"]), 43.4016510014076, places=10)
+        self.assertAlmostEqual(float(target["interest_coverage"]), 1.87059003496571, places=10)
+        self.assertEqual(target["coverage_status"], "breached")
+        self.assertLess(
+            phase7.dec(target["ltm_cash_interest_paid"]),
+            phase7.dec(target["ltm_cash_interest_due_or_payable"]),
+        )
+
+    def test_86_reduced_payment_cannot_improve_defined_coverage(self) -> None:
+        selected = next(
+            candidate for candidate in phase7.candidate_definitions()
+            if candidate.candidate_id == "STR-008"
+        )
+        scenario_id = "SEVERE_PHASE7_COVENANT_NO_WAIVER"
+        monthly, _ = phase7.model_covenant_linked_no_waiver(
+            selected, scenario_id, "SEVERE_UNMITIGATED", phase7.leverage_limit,
+        )
+        target = next(row for row in monthly if row["month_end"] == "2028-01-31")
+        due = phase7.dec(target["ltm_cash_interest_due_or_payable"])
+        paid = phase7.dec(target["ltm_cash_interest_paid"])
+        ebitda = phase7.dec(target["ttm_lender_base_ebitda"])
+        defined_coverage = phase7.coverage_ratio(ebitda, due)
+        lower_paid = paid / Decimal("2")
+        self.assertEqual(defined_coverage, phase7.coverage_ratio(ebitda, due))
+        self.assertGreater(
+            phase7.coverage_ratio(ebitda, lower_paid),
+            phase7.coverage_ratio(ebitda, paid),
+        )
+        self.assertGreater(phase7.coverage_ratio(ebitda, paid), defined_coverage)
+
+    def test_87_due_based_coverage_preserves_sampled_event_dates(self) -> None:
+        selected = next(
+            candidate for candidate in phase7.candidate_definitions()
+            if candidate.candidate_id == "STR-008"
+        )
+        scenario_id = "SEVERE_PHASE7_COVENANT_NO_WAIVER"
+        monthly, _ = phase7.model_covenant_linked_no_waiver(
+            selected, scenario_id, "SEVERE_UNMITIGATED", phase7.leverage_limit,
+        )
+        covenant_tests, _ = phase7.build_covenant_tests({scenario_id: monthly})
+        first_coverage_breach = next(
+            row["period_end"] for row in covenant_tests
+            if row["coverage_status"] == "breached"
+        )
+        first_payment_failure = next(
+            row["month_end"] for row in monthly
+            if row["mandatory_payment_failure_flag"] == "yes"
+        )
+        self.assertEqual(first_coverage_breach, "2027-01-31")
+        self.assertEqual(first_payment_failure, "2027-02-28")
 
 
 if __name__ == "__main__":

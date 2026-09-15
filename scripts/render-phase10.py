@@ -146,9 +146,12 @@ class PageWriter:
         self.c.setFont("Helvetica", 7.5)
         self.c.drawRightString(self.width - 42, self.height - 27, "Cutoff December 15, 2025 | Hypothetical close January 31, 2026")
         self.c.setFillColor(TEXT)
-        self.c.setFont("Helvetica", 7.5)
+        # Keep the complete classification line clear of the independently
+        # positioned page number on both memo-body and appendix pages.
+        self.c.setFont("Helvetica", 6.2)
         label = "TECHNICAL APPENDIX" if self.appendix else "MEMO BODY"
         self.c.drawString(42, 25, f"{label} | Public-information hypothetical transaction | {STATUS}")
+        self.c.setFont("Helvetica", 7.5)
         self.c.drawRightString(self.width - 42, 25, f"Page {self.page_no} of {self.total}")
         self.c.setStrokeColor(LINE)
         self.c.line(42, 35, self.width - 42, 35)
@@ -304,7 +307,7 @@ def build_memo(root: Path, metrics: dict[tuple[str, str], dict[str, str]], chart
         ["Sources less uses", "$0.000m", "Final payoff and funds flow required"],
         ["Amortization / sweep", "7.5% annual quarterly / 50% ECF", "Final definitions and safeguards required"],
         ["Final maturity", "January 31, 2031", "No refinancing proceeds assumed"],
-    ], [120, 205, 203], row_height=30, font_size=7.3)
+    ], [120, 205, 203], row_height=25, font_size=7.3)
     p.heading("Why Quanex would refinance")
     for text in [
         "Persistent acquisition-related revolver usage is moved into amortizing term debt, leaving the revolver primarily for working capital.",
@@ -327,7 +330,7 @@ def build_memo(root: Path, metrics: dict[tuple[str, str], dict[str, str]], chart
         ["Limited amendment", "N/D", "Terms and economics N/D"],
         ["$650m reference", "$507.954m", "$340.948m / 01/31/2031"],
         ["$635m selected", "$514.754m", "$324.780m / 01/31/2031"],
-    ], [125, 165, 238], row_height=24, font_size=7.2)
+    ], [125, 165, 238], row_height=20, font_size=7.2)
     p.paragraph("Selected is $19.385m above existing and $6.800m above reference at the common horizon. Ultimate bank-debt gaps use different maturity dates and cash-generation periods and are not directly comparable.", size=8.2, color=NAVY)
     c.showPage()
 
@@ -357,14 +360,16 @@ def build_memo(root: Path, metrics: dict[tuple[str, str], dict[str, str]], chart
         ["Lender-base EBITDA", "$179.358m", "$225.344m", "Owner-reviewed normalization; not contractual EBITDA"],
         ["CFO", "$88.812m", "$164.897m", "Includes cash interest under US GAAP"],
         ["FCF", "$51.726m", "$102.255m", "Defined as CFO less capex"],
+        ["Cash interest paid", value(metrics, "cash_interest_paid_disclosed", "FY2024"), value(metrics, "cash_interest_paid_disclosed", "FY2025"), "Original annual-report disclosure"],
+        ["Lender EBITDA / cash paid interest", value(metrics, "historical_lender_ebitda_to_disclosed_cash_interest_paid", "FY2024"), value(metrics, "historical_lender_ebitda_to_disclosed_cash_interest_paid", "FY2025"), "Historical diagnostic; not closing or contractual coverage"],
         ["CFO / lender EBITDA", "49.5%", "73.2%", "FY2025 recovery is supportive"],
         ["FCF / lender EBITDA", "28.8%", "45.4%", "Still subject to seasonality and capex mix"],
-    ], [132, 82, 82, 232], row_height=31, font_size=7.2)
+    ], [132, 82, 82, 232], row_height=25, font_size=6.9)
     p.image(charts[0], 520, 234)
     p.heading("Earnings-definition bridge")
     p.paragraph("FY2025 unadjusted EBITDA of $(90.508)m is bridged to $225.344m lender-base EBITDA primarily through the $302.284m impairment, $9.007m inventory purchase-accounting step-up, and $4.561m identified noncash restructuring component. Plant-relocation items and the $10.263m composite receive no Base credit. FY2024 lender Base accepts the $29.076m purchase-accounting normalization and $39.324m Tyman transaction fees, deducts the $(4.196)m gain, and rejects the plant-closure cost in Base.", size=8.1)
     p.callout("Cash-flow boundary",
-              "Lender-normalization treatment, contractual eligibility, and historical cash treatment remain separate. An addback can be mathematically accepted while the underlying cash outflow or business-risk signal remains fully visible.", PALE_TAN, 55)
+              "Lender-normalization, contractual eligibility, historical cash-paid interest, and forecast paid-or-payable coverage remain separate. Cash interest is already in US-GAAP CFO and is not deducted twice.", PALE_TAN, 55)
     c.showPage()
 
     p = PageWriter(c, "Quanex credit committee memorandum", 5, total)
@@ -396,7 +401,7 @@ def build_memo(root: Path, metrics: dict[tuple[str, str], dict[str, str]], chart
     p = PageWriter(c, "Quanex credit committee memorandum", 6, total)
     p.section("6. Base repayment and refinancing")
     p.table(["Base measure", "Result", "Credit meaning"], [
-        ["FY2026 lender EBITDA", "$190.249m", "Annual FY2026 public-information model output"],
+        ["FY2026 post-closing EBITDA", "$190.249m", "Nine months, February 1-October 31, 2026; not annual"],
         ["Modeled operating cash", "$794.484m", "Cumulative 02/01/2026-01/31/2031"],
         ["CFADS", "$640.309m", "Cumulative 02/01/2026-01/31/2031"],
         ["Cash interest", "$167.386m", "Cumulative 02/01/2026-01/31/2031"],
@@ -405,7 +410,7 @@ def build_memo(root: Path, metrics: dict[tuple[str, str], dict[str, str]], chart
         ["Minimum coverage", "5.3860x", "Minimum over forecast"],
         ["Common-horizon funded debt", "$514.754m", "Total funded debt at 07/31/2029"],
         ["Unsupported maturity gap", "$324.780m", "Bank debt at 01/31/2031; no takeout"],
-    ], [145, 115, 268], row_height=29, font_size=7.4)
+    ], [145, 115, 268], row_height=24, font_size=7.4)
     p.image(charts[1], 520, 232)
     p.heading("Repayment conclusion")
     p.paragraph("Primary repayment is recurring operating cash available after operating requirements, cash interest, cash taxes, working-capital needs, necessary maintenance capex, and other required uses. Scheduled amortization and the ECF sweep are payment mechanisms, not sources. Accessible cash and legally drawable revolver capacity are timing/liquidity support only; a draw increases or reallocates funded debt. Refinancing is an unresolved separately underwritten dependency, not secondary repayment. Collateral/business-sale recovery is the secondary backstop; official recovery is N/D.", size=8.4)
@@ -470,8 +475,8 @@ def build_memo(root: Path, metrics: dict[tuple[str, str], dict[str, str]], chart
     p.heading("Proposed covenant and warning framework")
     p.table(["Measure", "Proposed covenant", "Analyst warning", "Key limitation"], [
         ["Gross funded leverage", "3.50x / 3.25x / 3.00x", "3.25x / 3.00x / 2.75x", "Zero cash netting; final debt/EBITDA definitions required"],
-        ["Cash-interest coverage", "Minimum 3.00x", "Below 3.50x", "Opening LTM cash interest is N/D"],
-        ["Usable liquidity", "Minimum $50m", "Below $75m", "Eligible cash and drawability require documents"],
+        ["Cash-interest coverage", "Minimum 3.00x", "At or below 3.50x", "Opening LTM cash interest is N/D"],
+        ["Usable liquidity", "Minimum $50m", "At or below $75m", "Eligible cash and drawability require documents"],
         ["Operating cash floor", "Model control: $25m", "Separate", "Not a source or covenant cash-netting amount"],
     ], [118, 120, 118, 172], row_height=42, font_size=7.0)
     p.heading("Intervention sequence")
@@ -578,7 +583,7 @@ def build_brief(root: Path, metrics: dict[tuple[str, str], dict[str, str]]) -> P
     y = draw_wrapped(c, "Primary repayment: recurring operating cash after all required uses. Amortization/sweep are payment mechanisms. Cash and legally drawable revolver are liquidity support only. Refinancing is an unresolved maturity dependency. Recovery is the secondary backstop; official recovery N/D.", left_x + 5, y, col_w - 10, 7.8, 9.4)
 
     rows = [
-        ("FY2025 lender-base EBITDA", "$225.344m"),
+        ("FY2025 EBITDA / historical cash-paid cov.", f"{value(metrics, 'lender_base_ebitda', 'FY2025')} / {value(metrics, 'historical_lender_ebitda_to_disclosed_cash_interest_paid', 'FY2025')}"),
         ("Opening funded debt / leverage", "$727.517m / 3.2285x"),
         ("Base minimum liquidity over forecast", "$263.902m"),
         ("Base minimum coverage over forecast", "5.3860x"),

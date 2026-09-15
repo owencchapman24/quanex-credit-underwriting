@@ -38,7 +38,7 @@ The central operating issue is gross-margin and plant execution. FY2025's improv
 
 FY2024 revenue / operating income were $1,277.862m [P10M-001] / $54.826m [P10M-002]; FY2025 were $1,837.641m [P10M-009] / $-193.952m [P10M-010]. FY2025's GAAP loss includes the impairment and is not the same as recurring cash capacity. FY2024/FY2025 unadjusted EBITDA was $115.154m [P10M-008] / $-90.508m [P10M-016]; owner-reviewed lender-base EBITDA was $179.358m [P10M-007] / $225.344m [P10M-015]. Contractual EBITDA remains an unofficial, partial public-information reconstruction. [P10M-001:P10M-016]
 
-FY2025 CFO / FCF improved to $164.897m [P10M-011] / $102.255m [P10M-012], or 73.2% [P10M-013] / 45.4% [P10M-014] of lender-base EBITDA, versus FY2024 conversion of 49.5% [P10M-005] / 28.8% [P10M-006]. EBITDA addbacks do not reverse cash outflows, and the composite FY2025 adjustment remains unresolved for lender credit. [P10R-001; P10R-002]
+FY2025 CFO / FCF improved to $164.897m [P10M-011] / $102.255m [P10M-012], or 73.2% [P10M-013] / 45.4% [P10M-014] of lender-base EBITDA, versus FY2024 conversion of 49.5% [P10M-005] / 28.8% [P10M-006]. Disclosed historical cash interest paid was $10.910m [P10M-147] / $52.630m [P10M-149]; lender-base EBITDA divided by those disclosed cash-paid amounts was 16.4398x [P10M-148] / 4.2817x [P10M-150]. This is a historical diagnostic only: it is not closing-LTM coverage, does not replace the modeled paid-or-payable definition, and cash interest is not deducted from CFO a second time. EBITDA addbacks do not reverse cash outflows, and the composite FY2025 adjustment remains unresolved for lender credit. [P10R-001; P10R-002]
 
 ## 5. Debt, legal structure, and liquidity
 
@@ -48,13 +48,13 @@ Public evidence does not complete the post-Tyman guarantor roster, eligible-coll
 
 ## 6. Base repayment and refinancing
 
-FY2026 annual lender EBITDA is $190.249m [P10M-030]. Cumulative from February 1, 2026 through January 31, 2031, modeled operating cash / CFADS are $794.484m [P10M-031] / $640.309m [P10M-032]; cumulative cash interest, scheduled principal, and ECF sweep over that same model period are $167.386m [P10M-033], $238.125m [P10M-034], and $57.292m [P10M-035]. Minimum cash-interest coverage over the forecast is 5.3860x [P10M-038]; minimum all-in liquidity over the forecast, including the January 31, 2026 opening position, is $263.902m [P10M-036]. These are modeled public-information outputs, not management guidance. [P10M scenario records]
+FY2026 post-closing nine-month lender EBITDA from February 1 through October 31, 2026 is $190.249m [P10M-030]; it excludes the pre-closing first quarter and is not an annual figure. Cumulative from February 1, 2026 through January 31, 2031, modeled operating cash / CFADS are $794.484m [P10M-031] / $640.309m [P10M-032]; cumulative cash interest, scheduled principal, and ECF sweep over that same model period are $167.386m [P10M-033], $238.125m [P10M-034], and $57.292m [P10M-035]. Minimum cash-interest coverage over the forecast is 5.3860x [P10M-038]; minimum all-in liquidity over the forecast, including the January 31, 2026 opening position, is $263.902m [P10M-036]. These are modeled public-information outputs, not management guidance. [P10M scenario records]
 
 At the common July 31, 2029 horizon, selected total funded debt is $514.754m [P10M-116]. At the later January 31, 2031 selected maturity, the unsupported bank-debt gap is $324.780m [P10M-040]. Accessible cash and undrawn, legally drawable revolving capacity provide timing and liquidity support only. Drawing the revolver is not repayment of consolidated debt; it increases or reallocates funded debt. Future refinancing is an unresolved, separately underwritten maturity dependency, not secondary repayment, and no takeout proceeds are assumed. A maturity plan must begin at least 24 months before maturity and escalate at 12 months without an executable solution. [P10CM-026]
 
 ## 7. Downside and covenant intervention
 
-Moderate unmitigated FY2026 annual EBITDA is $151.000m [P10M-046]; maximum quarterly-test leverage / minimum coverage over the forecast are 4.4893x [P10M-053] / 3.2104x [P10M-054]. Moderate mitigated maximum quarterly-test leverage / minimum coverage are 4.4670x [P10M-069] / 3.2168x [P10M-070]. Both paths warn and breach on October 31, 2026; mitigation does not restore leverage covenant compliance. Minimum all-in liquidity over the forecast remains positive at $165.078m [P10M-052] / $168.937m [P10M-068], and neither modeled path reaches liquidity exhaustion or payment failure. No automatic waiver is assumed. January 31, 2031 bank-debt gaps are $408.375m [P10M-056] / $381.133m [P10M-072]. [P10M moderate paths]
+Moderate unmitigated FY2026 post-closing nine-month EBITDA from February 1 through October 31, 2026 is $151.000m [P10M-046]; it is not an annual figure. Maximum quarterly-test leverage / minimum coverage over the forecast are 4.4893x [P10M-053] / 3.2104x [P10M-054]. Moderate mitigated maximum quarterly-test leverage / minimum coverage are 4.4670x [P10M-069] / 3.2168x [P10M-070]. Both paths warn and breach on October 31, 2026; mitigation does not restore leverage covenant compliance. Minimum all-in liquidity over the forecast remains positive at $165.078m [P10M-052] / $168.937m [P10M-068], and neither modeled path reaches liquidity exhaustion or payment failure. No automatic waiver is assumed. January 31, 2031 bank-debt gaps are $408.375m [P10M-056] / $381.133m [P10M-072]. [P10M moderate paths]
 
 Severe unmitigated reaches warning in April 2026, breach in October 2026, zero usable liquidity in July 2027, and mandatory cash-interest failure on December 31, 2027. Maximum quarterly-test leverage / minimum coverage are 7.0574x [P10M-085] / 1.7819x [P10M-086]; the maturity gap is $604.258m [P10M-088]. Severe mitigation delays but does not eliminate failure and leaves $554.718m [P10M-104]. Lower debt caused by curtailed borrowing or unpaid obligations is not improvement. [P10M-066:P10M-074; P10CM-021:P10CM-023]
 
@@ -88,6 +88,8 @@ The response is not faster deleveraging or moderate covenant survival. If fully 
 | Lender-base EBITDA | $179.358m [P10M-007] | $225.344m [P10M-015] |
 | CFO | $88.812m [P10M-003] | $164.897m [P10M-011] |
 | FCF | $51.726m [P10M-004] | $102.255m [P10M-012] |
+| Disclosed cash interest paid | $10.910m [P10M-147] | $52.630m [P10M-149] |
+| Lender EBITDA / disclosed cash interest paid | 16.4398x [P10M-148] | 4.2817x [P10M-150] |
 
 ### Appendix B — scenario and maturity comparison
 

@@ -10,11 +10,12 @@ credit metrics, and evidence-derived Phase 3 questions. It does not forecast,
 size a refinancing, calculate closing liquidity, produce an official covenant
 calculation, or begin Phase 3.
 
-No new source was added. `SUPPLEMENTAL_FACTS.csv` transcribes balance-sheet
-totals, detailed cash-flow lines, cash roll-forwards, financing flows, and
-FY2021-FY2023 debt principal from SRC-001, SRC-012, and SRC-014 because those
-controls were not fields in the Phase 1 extract. The approved archival URLs and
-publication dates remain in the Phase 1 manifest and ledgers.
+No new source ID was added. `SUPPLEMENTAL_FACTS.csv` transcribes balance-sheet
+totals, detailed cash-flow lines, cash roll-forwards, financing flows,
+FY2021-FY2023 debt principal, and the FY2023-FY2025 cash-paid-interest table
+from SRC-001, SRC-012, and SRC-014 because those controls were not fields in
+the Phase 1 extract. The approved archival URLs and publication dates remain in
+the Phase 1 manifest and ledgers.
 
 ## Layers
 
@@ -35,10 +36,13 @@ matching source precision. Comparison to company EBITDA rounded to one decimal
 uses a $0.05 million tolerance. No unexplained plug is permitted.
 
 Free cash flow is CFO plus normalized negative capital expenditures. Cash
-interest is already inside US-GAAP CFO and is not subtracted again. Gross funded
-debt uses principal, including finance leases/other debt; carrying debt is kept
-separate. Net debt using book cash is an analyst comparable, not the contractual
-numerator because eligible cash is not public.
+interest is already inside US-GAAP CFO and is not subtracted again. SRC-001
+separately reports cash paid for interest for FY2023-FY2025; the resulting
+historical coverage diagnostic is not the contractual paid-or-payable measure
+and does not establish closing-LTM coverage. Gross funded debt uses principal,
+including finance leases/other debt; carrying debt is kept separate. Net debt
+using book cash is an analyst comparable, not the contractual numerator because
+eligible cash is not public.
 
 Working-capital days use actual inclusive fiscal days (366 for FY2024; 365 for
 the other displayed years), average balances when an opening year is available,

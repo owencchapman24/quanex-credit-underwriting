@@ -19,6 +19,8 @@ from decimal import Decimal, InvalidOperation, getcontext
 from pathlib import Path
 from typing import Iterable, Sequence
 
+from remediation_controls import PHASE2_AUTHORIZED_SHA256, unapproved_paths
+
 
 getcontext().prec = 28
 
@@ -2972,7 +2974,11 @@ def protected_prior_changes() -> list[str]:
         cwd=ROOT, text=True, capture_output=True, check=True,
     )
     missing = [path for path in protected if not (ROOT / path).is_file()]
-    return sorted(set(missing + changed.stdout.splitlines()))
+    return unapproved_paths(
+        ROOT,
+        missing + changed.stdout.splitlines(),
+        PHASE2_AUTHORIZED_SHA256,
+    )
 
 
 def changed_paths() -> list[str]:
@@ -3025,16 +3031,23 @@ def validate_changed_paths() -> None:
                 "Protected Phase 5 artifact changed after approval: " + ", ".join(protected)
             )
     allowed_exact = {
-        ".gitattributes", "README.md", "scripts/phase4.py", "scripts/phase5.py", "scripts/phase6.py",
+        ".gitattributes", "README.md", "scripts/phase2.py", "scripts/phase4.py", "scripts/phase5.py", "scripts/phase6.py",
+        "scripts/remediation_controls.py", "scripts/workbook_semantics.py", "scripts/xlsx_package.py",
         "scripts/phase7.py", "scripts/phase8.py", "scripts/build-phase8.mjs",
         "scripts/recalculate-phase8.py", "scripts/validate-phase8-excel.ps1",
         "scripts/phase9.py", "scripts/build-phase9.mjs", "scripts/recalculate-phase9.py", "scripts/validate-phase9-excel.ps1",
         "scripts/phase10.py", "scripts/build-phase10.mjs", "scripts/render-phase10.py",
         "scripts/phase11.py", "scripts/render-phase11.py",
-        "tests/test_phase5.py", "tests/test_phase6.py",
+        "tests/test_phase2.py", "tests/test_phase5.py", "tests/test_phase6.py", "tests/test_workbook_semantics.py", "tests/test_xlsx_package.py",
         "tests/test_phase7.py", "tests/test_phase8.py", "tests/test_phase9.py", "tests/test_phase10.py", "tests/test_phase11.py",
         "tests/test_audit_remediation.py",
         "model/Quanex_Credit_Underwriting.xlsx",
+        "data/phase2/raw/SUPPLEMENTAL_FACTS.csv",
+        "data/phase2/processed/historical_spread.csv",
+        "data/phase2/processed/historical_credit_metrics.csv",
+        "data/phase2/processed/reconciliation_results.csv",
+        "docs/phase-2/CREDIT_ANALYSIS.md", "docs/phase-2/METHODOLOGY.md",
+        "docs/phase-2/SOURCE_LEDGER.csv",
     }
     unexpected = [
         path for path in changed_paths()

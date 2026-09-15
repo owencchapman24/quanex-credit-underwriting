@@ -16,7 +16,7 @@ P11V-014,anchors,opening_total_funded_debt existing_projected,PASS,732.51671875,
 P11V-015,anchors,opening_total_funded_debt reference_projected,PASS,742.51671875,742.51671875
 P11V-016,anchors,opening_total_funded_debt selected_projected,PASS,727.51671875,727.51671875
 P11V-017,anchors,selected_minus_existing_projected_closing_debt 2026-01-31,PASS,-5.00000000,-5.00000000
-P11V-018,README,required section order,PASS,"[30, 609, 1228, 2862, 3059, 3376, 4124, 4886, 5903, 7054, 7660]",ordered
+P11V-018,README,required section order,PASS,"[30, 609, 1228, 2862, 3059, 3376, 4124, 4886, 6374, 7525, 8131]",ordered
 P11V-019,README,recommendation and fallback visible,PASS,checked,present
 P11V-020,README,clarified owner wording and no funding authority,PASS,checked,present
 P11V-021,README,same-date projected closing comparison,PASS,checked,present
@@ -27,29 +27,30 @@ P11V-025,README,AI assistance and owner validation accurately separated,PASS,che
 P11V-026,README,full disclosure link present,PASS,checked,present
 P11V-027,README,reproducibility bounded to tested toolchain,PASS,checked,tested environment stated
 P11V-028,links,all internal links resolve,PASS,0,0
-P11V-029,workbook,approved raw SHA,PASS,a1fdd2604468e8b795f2bd4330fe78821b66570fd4d728313b98963b01f671d4,a1fdd2604468e8b795f2bd4330fe78821b66570fd4d728313b98963b01f671d4
-P11V-030,workbook,approved size,PASS,286530,286530
-P11V-031,workbook,approved normalized fingerprint,PASS,cf536570671a6baf2a7b019d46444cb839bb906943af8f0f22929772c04303ec,cf536570671a6baf2a7b019d46444cb839bb906943af8f0f22929772c04303ec
-P11V-032,workbook,approved structure,PASS,14/2897/7,14/2897/7
+P11V-029,workbook,approved raw SHA,PASS,6e31a259aebe14b4e9a379348d4b686f6a1148a6db743c72646a783321167454,6e31a259aebe14b4e9a379348d4b686f6a1148a6db743c72646a783321167454
+P11V-030,workbook,approved size,PASS,301362,301362
+P11V-031,workbook,approved normalized fingerprint,PASS,4d927e955f1cc9ede829aab41b26e43f62cfe23812d5018f54c12b73028b923a,4d927e955f1cc9ede829aab41b26e43f62cfe23812d5018f54c12b73028b923a
+P11V-032,workbook,approved structure,PASS,14/3473/7,14/3473/7
 P11V-033,workbook,Base saved and no external links or formula errors,PASS,Base/0/0,Base/0/0
-P11V-034,PDF,credit memo approved,PASS,9f0b8deb55ccd46729b2a03c97fc0aee63faa31e6ff73702296bda0417629198/11,9f0b8deb55ccd46729b2a03c97fc0aee63faa31e6ff73702296bda0417629198/11
-P11V-035,PDF,committee brief approved,PASS,f4452cb1c22272158d5720b259eaa8669bf234467b1cc671b5fda72c2547a801/1,f4452cb1c22272158d5720b259eaa8669bf234467b1cc671b5fda72c2547a801/1
-P11V-036,manifest,artifact hashes current,PASS,30,all current
-P11V-037,reproducibility,clean-clone controls pass,PASS,11,all PASS
-P11V-038,dependencies,actual dependency inventory complete,PASS,14,14
-P11V-039,lineage,Phase 11 source hashes current,PASS,21,all current
-P11V-040,cutoff,no new analytical evidence,PASS,checked,none added
-P11V-041,disclosure,material limitations visible,PASS,checked,complete
-P11V-042,disclosure,AI disclosure matches owner-approved wording,PASS,e18d5d151625f04c90201eda7038850f50cb094fb855cbe94140d2684aef87cd,exact owner-approved text
-P11V-043,disclosure,owner judgment and AI implementation separated,PASS,checked,complete
-P11V-044,disclosure,no prompting or unaided-authorship implication,PASS,checked,absent
-P11V-045,license,unlicensed status disclosed,PASS,[],none; owner decision pending
-P11V-046,license,licensing remains pending owner review,PASS,checked,license pending; AI disclosure owner reviewed
-P11V-047,repository,PDF binary rule retained,PASS,*.pdf -diff -merge -text,*.pdf -diff -merge -text
-P11V-048,repository,no cache lock temporary backup or recovery residue,PASS,,none
-P11V-049,repository,no absolute local paths,PASS,,none
-P11V-050,repository,no credentials,PASS,,none
-P11V-051,scope,Phase 12 absent,PASS,,none
-P11V-052,scope,working changes stay within exact remediation inventory,PASS,,none
-P11V-053,scope,no unbounded prior-phase exception,PASS,62,all paths explicitly allowed
-P11V-054,git,nothing staged,PASS,,none
+P11V-034,PDF,credit memo approved,PASS,dea0465ae7ee29be0c993c1ac4f57ac396b872763b2c657fded1edcb9c5e95b8/11,dea0465ae7ee29be0c993c1ac4f57ac396b872763b2c657fded1edcb9c5e95b8/11
+P11V-035,PDF,committee brief approved,PASS,af8d3799f511daa77df202274b4d7dde670e2e6b04c0c4c98f482b896a5627d6/1,af8d3799f511daa77df202274b4d7dde670e2e6b04c0c4c98f482b896a5627d6/1
+P11V-036,manifest,artifact hashes current,PASS,33,all current
+P11V-037,reproducibility,isolated reproduction controls pass,PASS,14,all PASS
+P11V-038,reproducibility,reproduction mode explicitly classified,PASS,precommit_overlay_review,one explicit verification mode
+P11V-039,dependencies,actual dependency inventory complete,PASS,14,14
+P11V-040,lineage,Phase 11 source hashes current,PASS,45,all current
+P11V-041,cutoff,no new analytical evidence,PASS,checked,none added
+P11V-042,disclosure,material limitations visible,PASS,checked,complete
+P11V-043,disclosure,AI disclosure matches owner-approved wording,PASS,e18d5d151625f04c90201eda7038850f50cb094fb855cbe94140d2684aef87cd,exact owner-approved text
+P11V-044,disclosure,owner judgment and AI implementation separated,PASS,checked,complete
+P11V-045,disclosure,no prompting or unaided-authorship implication,PASS,checked,absent
+P11V-046,license,unlicensed status disclosed,PASS,[],none; owner decision pending
+P11V-047,license,licensing remains pending owner review,PASS,checked,license pending; AI disclosure owner reviewed
+P11V-048,repository,PDF binary rule retained,PASS,*.pdf -diff -merge -text,*.pdf -diff -merge -text
+P11V-049,repository,no cache lock temporary backup or recovery residue,PASS,,none
+P11V-050,repository,no absolute local paths,PASS,,none
+P11V-051,repository,no credentials,PASS,,none
+P11V-052,scope,Phase 12 absent,PASS,,none
+P11V-053,scope,dirty-tree changes match explicit overlay manifest,PASS,missing=[];unexpected=[],exact declared overlay
+P11V-054,scope,no inferred working-tree exceptions,PASS,92,clean tree or explicit overlay
+P11V-055,git,nothing staged,PASS,,none

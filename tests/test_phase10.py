@@ -6,6 +6,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 import zipfile
 from decimal import Decimal
@@ -87,6 +88,28 @@ class Phase10DataTests(unittest.TestCase):
         self.assertEqual(Decimal(self.metric[("lender_base_ebitda", "FY2024")]["value"]), Decimal("179.358"))
         self.assertEqual(Decimal(self.metric[("lender_base_ebitda", "FY2025")]["value"]), Decimal("225.344"))
 
+    def test_historical_cash_paid_interest_is_separate_and_sourced(self) -> None:
+        expected = {
+            "FY2024": (Decimal("10.910"), Decimal("16.43978001833181")),
+            "FY2025": (Decimal("52.630"), Decimal("4.281664449933498")),
+        }
+        generated = {
+            (row["metric_name"], row["scenario_or_period"]): row
+            for row in phase10.committee_metrics()
+        }
+        for year, (paid, coverage) in expected.items():
+            for metric_set in (generated, self.metric):
+                paid_row = metric_set[("cash_interest_paid_disclosed", year)]
+                coverage_row = metric_set[("historical_lender_ebitda_to_disclosed_cash_interest_paid", year)]
+                self.assertEqual(Decimal(paid_row["value"]), paid)
+                self.assertAlmostEqual(float(coverage_row["value"]), float(coverage), places=12)
+                self.assertEqual(paid_row["source_ids"], "SRC-001")
+                self.assertIn("SRC-001", coverage_row["source_ids"])
+                self.assertIn("S2B-", coverage_row["source_ids"])
+                self.assertIn("S2S-", coverage_row["source_ids"])
+                self.assertIn("not a closing-LTM", paid_row["limitations"])
+                self.assertIn("diagnostic", coverage_row["limitations"].lower())
+
     def test_scenario_anchors(self) -> None:
         expected = {
             ("unsupported_maturity_gap", "BASE"): "324.77970512014787",
@@ -136,14 +159,51 @@ class Phase10DataTests(unittest.TestCase):
         self.assertEqual(Decimal(self.metric[("selected_minus_existing_projected_closing_debt", "2026-01-31")]["value"]), Decimal("-5"))
 
     def test_forecast_horizons_are_explicit(self) -> None:
-        annual = self.metric[("fy2026_lender_ebitda", "BASE")]
-        self.assertEqual((annual["measurement_horizon"], annual["measurement_basis"]), ("FY2026", "annual_fiscal_period"))
+        generated = {
+            (row["metric_name"], row["scenario_or_period"]): row
+            for row in phase10.committee_metrics()
+        }
+        scenarios = {
+            "BASE", "MODERATE_UNMITIGATED", "MODERATE_MITIGATED",
+            "SEVERE_UNMITIGATED", "SEVERE_MITIGATED",
+        }
+        for scenario in scenarios:
+            nine_month = generated[("fy2026_post_closing_nine_month_lender_ebitda", scenario)]
+            self.assertEqual(
+                (nine_month["measurement_horizon"], nine_month["measurement_basis"]),
+                ("2026-02-01 through 2026-10-31", "post_closing_nine_month_period"),
+            )
+            self.assertIn("not an annual figure", nine_month["limitations"])
         for name in ("modeled_operating_cash", "cfads", "cash_interest", "scheduled_principal", "ecf_sweep_realized"):
             row = self.metric[(name, "BASE")]
             self.assertEqual(row["measurement_horizon"], "2026-02-01 through 2031-01-31")
             self.assertEqual(row["measurement_basis"], "cumulative_model_period")
         self.assertEqual(self.metric[("minimum_cash_interest_coverage", "BASE")]["measurement_basis"], "minimum_over_forecast")
         self.assertEqual(self.metric[("unsupported_maturity_gap", "BASE")]["measurement_basis"], "point_in_time_bank_debt_maturity_gap")
+
+        q1 = next(
+            row for row in rows("data/phase5/processed/FY2026_PERIOD_PRESENTATION.csv")
+            if row["presentation_id"] == "PP-001"
+        )
+        full_year = next(
+            row for row in rows("data/phase5/processed/FY2026_PERIOD_PRESENTATION.csv")
+            if row["presentation_id"] == "PP-004"
+        )
+        base_nine_month = Decimal(
+            generated[("fy2026_post_closing_nine_month_lender_ebitda", "BASE")]["value"]
+        )
+        self.assertLessEqual(
+            abs(base_nine_month + Decimal(q1["lender_base_ebitda"]) - Decimal(full_year["lender_base_ebitda"])),
+            Decimal("0.000000000001"),
+        )
+        moderate_nine_month = Decimal(
+            generated[("fy2026_post_closing_nine_month_lender_ebitda", "MODERATE_UNMITIGATED")]["value"]
+        )
+        self.assertAlmostEqual(
+            float(moderate_nine_month + Decimal(q1["lender_base_ebitda"])),
+            183.02510750838724,
+            places=10,
+        )
 
     def test_moderate_breach_anchors(self) -> None:
         expected = {
@@ -324,103 +384,64 @@ class Phase10DeliverableTests(unittest.TestCase):
             self.assertFalse(path.exists())
 
     def test_prior_analytical_artifacts_unchanged(self) -> None:
-        result = subprocess.run(
-            ["git", "diff", "--name-only", "--", "data/phase1", "data/phase2", "data/phase3", "data/phase4",
-             "data/phase5", "data/phase6", "data/phase7", "data/phase8", "data/phase9", "docs/phase-0",
-             "docs/phase-1", "docs/phase-2", "docs/phase-3", "docs/phase-4", "docs/phase-5", "docs/phase-6",
-             "docs/phase-7", "docs/phase-8", "docs/phase-9"],
-            cwd=ROOT, text=True, capture_output=True, check=True,
+        prefixes = tuple(
+            [f"data/phase{phase}" for phase in range(1, 10)]
+            + [f"docs/phase-{phase}" for phase in range(0, 10)]
         )
-        changed = {line for line in result.stdout.splitlines() if line}
-        allowed = {
-            "docs/phase-7/COVENANT_DESIGN.md",
-            "docs/phase-8/METHODOLOGY.md", "docs/phase-8/CALCULATION_VALIDATION.md",
-            "docs/phase-8/SOURCE_LEDGER.csv", "docs/phase-9/METHODOLOGY.md",
-            "data/phase8/processed/SCENARIO_CAPTURE_RESULTS.csv",
-            "data/phase8/processed/WORKBOOK_MAP.csv",
-            "data/phase8/processed/WORKBOOK_VALIDATION_RESULTS.csv",
-            "data/phase8/processed/DYNAMIC_TEST_EVIDENCE.csv",
-            "data/phase8/processed/OPENING_DEBT_COMPARISON.csv",
-            "data/phase8/processed/TERM_SIZING_SENSITIVITY.csv",
-            "data/phase8/processed/AMORTIZATION_SENSITIVITY_RESULTS.csv",
-            "data/phase8/raw/STARTING_CHECKPOINT.csv",
-            "data/phase9/processed/DYNAMIC_RECOVERY_TEST_EVIDENCE.csv",
-            "data/phase9/processed/VALIDATION_RESULTS.csv",
-            "data/phase9/raw/STARTING_CHECKPOINT.csv",
-        }
-        self.assertLessEqual(changed, allowed)
+        changed = [
+            path for path in phase10.changed_paths()
+            if any(path == prefix or path.startswith(prefix + "/") for prefix in prefixes)
+        ]
+        self.assertEqual(
+            phase10.unapproved_paths(
+                ROOT, changed, phase10.PHASE10_PRIOR_AUTHORIZED_SHA256,
+            ),
+            [],
+        )
 
     def test_audit_remediation_baseline_exceptions_are_bounded(self) -> None:
-        authorized_paths = {
-            "README.md",
-            "data/phase10/processed/COMMITTEE_METRICS.csv",
-            "data/phase10/processed/CONDITIONS_AND_MONITORING.csv",
-            "data/phase10/processed/DECISION_REGISTER.csv",
-            "data/phase10/processed/DELIVERABLE_CONSISTENCY_RESULTS.csv",
-            "data/phase10/processed/RISK_MITIGANT_MATRIX.csv",
-            "data/phase10/processed/VALIDATION_RESULTS.csv",
-            "data/phase10/processed/WORKBOOK_INPUTS.json",
-            "data/phase10/raw/OWNER_REVIEW_DECISIONS.csv",
-            "data/phase10/raw/STARTING_CHECKPOINT.csv",
-            "data/phase11/processed/ARTIFACT_MANIFEST.csv",
-            "data/phase11/processed/REPRODUCIBILITY_RESULTS.csv",
-            "data/phase11/processed/VALIDATION_RESULTS.csv",
-            "data/phase11/raw/STARTING_CHECKPOINT.csv",
-            "data/phase8/processed/SCENARIO_CAPTURE_RESULTS.csv",
-            "data/phase8/processed/WORKBOOK_MAP.csv",
-            "data/phase8/processed/WORKBOOK_VALIDATION_RESULTS.csv",
-            "data/phase8/raw/STARTING_CHECKPOINT.csv",
-            "data/phase9/processed/VALIDATION_RESULTS.csv",
-            "data/phase9/raw/STARTING_CHECKPOINT.csv",
-            "docs/phase-10/DECISION_RATIONALE.md",
-            "docs/phase-10/METHODOLOGY.md",
-            "docs/phase-10/PHASE11_HANDOFF.md",
-            "docs/phase-10/SOURCE_LEDGER.csv",
-            "docs/phase-11/LIMITATIONS.md",
-            "docs/phase-11/METHODOLOGY.md",
-            "docs/phase-11/PHASE12_HANDOFF.md",
-            "docs/phase-11/RELEASE_CHECKLIST.md",
-            "docs/phase-11/REPRODUCIBILITY.md",
-            "docs/phase-11/SOURCE_LEDGER.csv",
-            "docs/phase-7/COVENANT_DESIGN.md",
-            "docs/phase-8/CALCULATION_VALIDATION.md",
-            "docs/phase-8/METHODOLOGY.md",
-            "docs/phase-8/SOURCE_LEDGER.csv",
-            "docs/phase-9/METHODOLOGY.md",
-            "model/Quanex_Credit_Underwriting.xlsx",
-            "reports/committee_brief.md",
-            "reports/committee_brief.pdf",
-            "reports/credit_memo.md",
-            "reports/credit_memo.pdf",
-            "scripts/build-phase10.mjs",
-            "scripts/build-phase8.mjs",
-            "scripts/phase10.py",
-            "scripts/phase11.py",
-            "scripts/phase4.py",
-            "scripts/phase5.py",
-            "scripts/phase6.py",
-            "scripts/phase7.py",
-            "scripts/phase8.py",
-            "scripts/phase9.py",
-            "scripts/recalculate-phase8.py",
-            "scripts/render-phase10.py",
-            "tests/test_phase10.py",
-            "tests/test_phase11.py",
-            "tests/test_phase8.py",
-            "tests/test_phase9.py",
-            "data/phase8/processed/AMORTIZATION_SENSITIVITY_RESULTS.csv",
-            "data/phase8/processed/DYNAMIC_TEST_EVIDENCE.csv",
-            "data/phase8/processed/OPENING_DEBT_COMPARISON.csv",
-            "data/phase8/processed/TERM_SIZING_SENSITIVITY.csv",
-            "data/phase9/processed/DYNAMIC_RECOVERY_TEST_EVIDENCE.csv",
-            "tests/test_audit_remediation.py",
+        exceptions = phase10.PHASE10_PRIOR_AUTHORIZED_SHA256
+        self.assertEqual(len(exceptions), 45)
+        expected_counts = {
+            "data/phase2/": 4, "docs/phase-2/": 3,
+            "data/phase6/": 3, "docs/phase-6/": 2,
+            "data/phase7/": 5, "docs/phase-7/": 3,
+            "data/phase8/": 10, "docs/phase-8/": 5,
+            "data/phase9/": 7, "docs/phase-9/": 3,
         }
-        self.assertEqual(len(authorized_paths), 62)
-        self.assertEqual(len(phase10.AUDIT_REMEDIATION_PRIOR_PHASE_EXCEPTIONS), 14)
-        self.assertLessEqual(
-            phase10.AUDIT_REMEDIATION_PRIOR_PHASE_EXCEPTIONS,
-            authorized_paths,
+        for prefix, expected in expected_counts.items():
+            self.assertEqual(sum(path.startswith(prefix) for path in exceptions), expected, prefix)
+        self.assertTrue({
+            "data/phase2/raw/SUPPLEMENTAL_FACTS.csv",
+            "data/phase6/processed/MONTHLY_LIQUIDITY_STRESS.csv",
+            "data/phase7/processed/COVENANT_SUMMARY.csv",
+            "data/phase8/processed/DYNAMIC_TEST_EVIDENCE.csv",
+            "data/phase9/processed/DYNAMIC_RECOVERY_TEST_EVIDENCE.csv",
+            "data/phase8/raw/MODEL_PERIOD_INPUTS.csv",
+            "data/phase9/processed/PHASE8_BASELINE_VERIFICATION.csv",
+        }.issubset(exceptions))
+        self.assertFalse(any(
+            path.startswith(("data/phase1/", "data/phase3/", "data/phase4/", "data/phase5/"))
+            or path.startswith(("docs/phase-0/", "docs/phase-1/", "docs/phase-3/", "docs/phase-4/", "docs/phase-5/"))
+            for path in exceptions
+        ))
+        self.assertFalse(any(path.startswith(("scripts/", "tests/")) for path in exceptions))
+        self.assertEqual(set(phase10.authorized_prior_paths()), set(exceptions))
+
+    def test_altered_reviewed_path_is_retained_for_baseline_rejection(self) -> None:
+        reviewed = "data/phase8/processed/DYNAMIC_TEST_EVIDENCE.csv"
+        self.assertNotIn(reviewed, phase10.isolation_baseline_paths([reviewed]))
+        with mock.patch.object(phase10, "authorized_prior_paths", return_value=frozenset()):
+            self.assertIn(reviewed, phase10.isolation_baseline_paths([reviewed]))
+
+    def test_phase10_covenant_rollup_checks_missing_before_nonmeaningful(self) -> None:
+        builder = (ROOT / "scripts" / "build-phase10.mjs").read_text(encoding="utf-8")
+        line = next(
+            item for item in builder.splitlines()
+            if "cv.getRange(`V${row}`)" in item
         )
+        self.assertLess(line.index('X${row}="INCOMPLETE"'), line.index('L${row}="N/M"'))
+        self.assertIn('"N/D"', line)
 
     def test_unrelated_prior_phase_baseline_change_is_rejected(self) -> None:
         unrelated = "data/phase7/processed/UNRELATED_ANALYTICAL_CHANGE.csv"
@@ -467,6 +488,8 @@ class Phase10DeliverableTests(unittest.TestCase):
             phase10.MODEL,
             ROOT / "data/phase8/processed/WORKBOOK_VALIDATION_RESULTS.csv",
             ROOT / "data/phase9/processed/VALIDATION_RESULTS.csv",
+            phase10.PHASE8_FINAL_DYNAMIC_EVIDENCE,
+            phase10.PHASE9_FINAL_DYNAMIC_EVIDENCE,
             ROOT / "data/phase10/processed/DELIVERABLE_CONSISTENCY_RESULTS.csv",
             ROOT / "data/phase10/processed/VALIDATION_RESULTS.csv",
         ]
@@ -479,15 +502,134 @@ class Phase10DeliverableTests(unittest.TestCase):
         controls = phase10.validate(engine, write_outputs=False)
         after = {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in protected}
         self.assertTrue(all(row["status"] == "PASS" for row in controls))
+        lineage = next(
+            row for row in controls
+            if row["test_name"] == "approved Phase 9 lineage"
+        )
+        self.assertEqual(lineage["observed"], "approved ancestor confirmed")
+        self.assertEqual(
+            lineage["expected"], f"{phase10.APPROVED_PHASE9_COMMIT} is an ancestor",
+        )
         self.assertEqual(before, after)
+
+    def test_phase10_final_checks_do_not_own_phase8_or_phase9_validation_records(self) -> None:
+        source = (ROOT / "scripts/phase10.py").read_text(encoding="utf-8")
+        all_body = source.split("def all_workflow", 1)[1].split("def _test_count", 1)[0]
+        self.assertEqual(all_body.count("write_outputs=False"), 2)
+        self.assertNotIn("run_libreoffice", all_body)
+        verify_body = source.split("def verify_isolated", 1)[1].split("def verify_commit_time", 1)[0]
+        phase8_call = verify_body.split('validation_outputs["phase8"]', 1)[1].split(
+            "fresh_records.extend(records)", 1,
+        )[0]
+        phase9_call = verify_body.split('validation_outputs["phase9"]', 1)[1].split(
+            "fresh_records.extend(records)", 1,
+        )[0]
+        self.assertNotIn("WORKBOOK_VALIDATION_RESULTS.csv", phase8_call)
+        self.assertNotIn("VALIDATION_RESULTS.csv", phase9_call)
+        self.assertIn('"scripts/recalculate-phase9.py"', source)
+        self.assertIn('"scripts/validate-phase9-excel.ps1"', source)
+
+    def test_fresh_validation_difference_is_not_masked_by_restoration(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            output = root / "data/phase8/processed/WORKBOOK_VALIDATION_RESULTS.csv"
+            output.parent.mkdir(parents=True)
+            output.write_text("status\nPASS\n", encoding="utf-8")
+
+            def mutate(_command: list[str], **_kwargs: object) -> str:
+                output.write_text("status\nFAIL\n", encoding="utf-8")
+                return "validator completed"
+
+            with mock.patch.object(phase10, "ROOT", root), mock.patch.object(
+                phase10, "run_command", side_effect=mutate
+            ):
+                with self.assertRaisesRegex(phase10.Phase10Error, "Fresh phase8 validation output differs"):
+                    phase10.run_fresh_validation(
+                        "phase8",
+                        ["fixture-validator"],
+                        ("data/phase8/processed/WORKBOOK_VALIDATION_RESULTS.csv",),
+                    )
+            self.assertEqual(output.read_text(encoding="utf-8"), "status\nFAIL\n")
+
+    def test_phase10_uses_current_regenerated_workbook_baseline(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "current.xlsx"
+            target = Path(folder) / "baseline.xlsx"
+            source.write_bytes(b"current-regenerated-phase9-workbook")
+            with mock.patch.object(phase10, "MODEL", source):
+                phase10.phase9_baseline(target)
+            self.assertEqual(target.read_bytes(), source.read_bytes())
+        source_text = (ROOT / "scripts/phase10.py").read_text(encoding="utf-8")
+        baseline_body = source_text.split("def phase9_baseline", 1)[1].split("def build_workbook", 1)[0]
+        self.assertNotIn("git\", \"show", baseline_body)
+
+    def test_final_dynamic_evidence_is_phase10_owned_and_preserves_stage_files(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="quanex-p10-dynamic-evidence-") as folder:
+            root = Path(folder)
+            stage8 = root / "phase8-stage.csv"
+            stage9 = root / "phase9-stage.csv"
+            final8 = root / "phase10-final-phase8.csv"
+            final9 = root / "phase10-final-phase9.csv"
+            stage8.write_bytes(b"phase8-stage-evidence")
+            stage9.write_bytes(b"phase9-stage-evidence")
+
+            def run_phase8(*, evidence_path: Path, tested_artifact: str) -> dict[str, object]:
+                self.assertEqual(evidence_path, final8)
+                self.assertEqual(tested_artifact, phase10.PHASE8_FINAL_DYNAMIC_ARTIFACT)
+                evidence_path.write_bytes(b"phase10-final-phase8")
+                return {"dynamic_status": "PASS"}
+
+            def run_phase9(*, evidence_path: Path, tested_artifact: str) -> dict[str, object]:
+                self.assertEqual(evidence_path, final9)
+                self.assertEqual(tested_artifact, phase10.PHASE9_FINAL_DYNAMIC_ARTIFACT)
+                evidence_path.write_bytes(b"phase10-final-phase9")
+                return {"dynamic_status": "PASS"}
+
+            with mock.patch.object(phase10.phase8, "DYNAMIC_EVIDENCE", stage8), mock.patch.object(
+                phase10.phase9, "DYNAMIC_EVIDENCE", stage9,
+            ), mock.patch.object(
+                phase10, "PHASE8_FINAL_DYNAMIC_EVIDENCE", final8,
+            ), mock.patch.object(
+                phase10, "PHASE9_FINAL_DYNAMIC_EVIDENCE", final9,
+            ), mock.patch.object(
+                phase10.phase8, "dynamic", side_effect=run_phase8,
+            ), mock.patch.object(
+                phase10.phase9, "dynamic", side_effect=run_phase9,
+            ):
+                phase10.run_final_artifact_dynamic_evidence()
+
+            self.assertEqual(stage8.read_bytes(), b"phase8-stage-evidence")
+            self.assertEqual(stage9.read_bytes(), b"phase9-stage-evidence")
+            self.assertEqual(final8.read_bytes(), b"phase10-final-phase8")
+            self.assertEqual(final9.read_bytes(), b"phase10-final-phase9")
+
+    def test_final_dynamic_evidence_gate_rejects_mismatched_artifact(self) -> None:
+        states = {
+            "phase8": ("FAIL", "custom evidence does not identify current workbook"),
+            "phase9": ("PASS", "73 required cases passed"),
+        }
+        with mock.patch.object(
+            phase10, "final_artifact_dynamic_evidence_state", return_value=states,
+        ), self.assertRaisesRegex(
+            phase10.Phase10Error, "does not identify current workbook",
+        ):
+            phase10.require_final_artifact_dynamic_evidence()
 
     def test_excel_harnesses_copy_before_open_and_save_elsewhere(self) -> None:
         for name in ("validate-phase8-excel.ps1", "validate-phase9-excel.ps1"):
             text = (ROOT / "scripts" / name).read_text(encoding="utf-8-sig")
             self.assertIn("Copy-Item -LiteralPath $source", text)
-            self.assertRegex(text, r"Workbooks\.Open\(\$(candidate|saved)\)")
+            self.assertIn("return $books.Open($path)", text)
+            self.assertRegex(text, r"Open-Workbook \$(excel|application) \$candidate")
+            self.assertRegex(text, r"Open-Workbook \$(excel|application) \$saved")
             self.assertNotIn("Workbooks.Open($source)", text)
             self.assertIn("SaveAs($saved", text)
+        phase8_text = (ROOT / "scripts" / "validate-phase8-excel.ps1").read_text(
+            encoding="utf-8-sig"
+        )
+        self.assertIn("$value -is [string]", phase8_text)
+        self.assertIn("$range.Value2 = [double]$value", phase8_text)
+        self.assertIn("Assert-CapturesCurrent", phase8_text)
 
     def test_isolated_workspace_has_independent_files_and_git_metadata(self) -> None:
         holder, destination = phase10.isolated_workspace()
@@ -509,6 +651,8 @@ class Phase10DeliverableTests(unittest.TestCase):
             "model/Quanex_Credit_Underwriting.xlsx",
             "data/phase8/processed/WORKBOOK_VALIDATION_RESULTS.csv",
             "data/phase9/processed/VALIDATION_RESULTS.csv",
+            "data/phase10/processed/FINAL_WORKBOOK_PHASE8_DYNAMIC_EVIDENCE.csv",
+            "data/phase10/processed/FINAL_WORKBOOK_PHASE9_DYNAMIC_EVIDENCE.csv",
             "data/phase10/processed/VALIDATION_RESULTS.csv",
         ):
             self.assertIn(relative, manifest)

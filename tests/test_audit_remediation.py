@@ -32,6 +32,7 @@ def load(name: str, relative: str):
 
 
 phase8 = load("phase8_audit_tests", "scripts/phase8.py")
+remediation_controls = load("remediation_controls_audit_tests", "scripts/remediation_controls.py")
 
 
 def rows(relative: str) -> list[dict[str, str]]:
@@ -158,16 +159,76 @@ class DynamicEvidenceStateTests(unittest.TestCase):
     def test_failed_and_verified_dynamic_evidence_have_explicit_states(self) -> None:
         with tempfile.TemporaryDirectory() as name:
             target = Path(name) / "evidence.csv"
-            script_hash = hashlib.sha256((ROOT / "scripts/recalculate-phase8.py").read_bytes()).hexdigest()
-            builder_hash = hashlib.sha256((ROOT / "scripts/build-phase8.mjs").read_bytes()).hexdigest()
-            header = "evidence_id,test_name,status,observed,engine,final_scenario,dynamic_script_sha256,workbook_builder_sha256,source_input_signature,tested_artifact\n"
-            def content(status: str) -> str:
-                return header + f'P8DE-001,gate,{status},ok,LibreOffice 26.8.0.3,Base,{script_hash},{builder_hash},signature,disposable copy\n'
-            with mock.patch.object(phase8, "DYNAMIC_EVIDENCE", target), mock.patch.object(phase8, "source_signature", return_value="signature"):
-                target.write_text(content("FAIL"), encoding="utf-8")
+            artifact_sha = phase8.sha256(phase8.MODEL)
+            artifact_fingerprint = phase8.normalized_fingerprint()
+            metadata = phase8.dynamic_runtime_metadata(
+                artifact_sha256=artifact_sha,
+                artifact_fingerprint=artifact_fingerprint,
+            )
+
+            def evidence(status: str) -> list[dict[str, str]]:
+                output = []
+                for index, case in enumerate(phase8.REQUIRED_DYNAMIC_CASES, 1):
+                    output.append({
+                        "evidence_id": f"P8DE-{index:03d}",
+                        **case,
+                        "status": status if index == 1 else "PASS",
+                        "observed": "fixture",
+                        **metadata,
+                    })
+                return output
+
+            with mock.patch.object(phase8, "DYNAMIC_EVIDENCE", target):
+                phase8.write_csv(target, evidence("FAIL"), list(phase8.DYNAMIC_EVIDENCE_FIELDS))
                 self.assertEqual(phase8.dynamic_evidence_state()[0], "FAIL")
-                target.write_text(content("PASS"), encoding="utf-8")
+                phase8.write_csv(target, evidence("PASS"), list(phase8.DYNAMIC_EVIDENCE_FIELDS))
                 self.assertEqual(phase8.dynamic_evidence_state()[0], "PASS")
+
+
+class RemediationAuthorizationTests(unittest.TestCase):
+    def test_reviewed_exception_maps_match_current_bytes(self) -> None:
+        maps = (
+            remediation_controls.PHASE2_AUTHORIZED_SHA256,
+            remediation_controls.PHASE6_AUTHORIZED_SHA256,
+            remediation_controls.PHASE7_AUTHORIZED_SHA256,
+            remediation_controls.PHASE8_AUTHORIZED_SHA256,
+            remediation_controls.PHASE9_AUTHORIZED_SHA256,
+        )
+        self.assertEqual([len(mapping) for mapping in maps], [9, 5, 8, 15, 10])
+        self.assertTrue(all(
+            remediation_controls.exact_authorized(ROOT, path, mapping)
+            for mapping in maps for path in mapping
+        ))
+        self.assertTrue(all("scripts/remediation_controls.py" not in mapping for mapping in maps))
+        phase2_artifacts = {
+            path: digest
+            for path, digest in remediation_controls.PHASE2_AUTHORIZED_SHA256.items()
+            if path.startswith(("data/", "docs/"))
+        }
+        expected_phase10 = {
+            **phase2_artifacts,
+            **remediation_controls.PHASE6_AUTHORIZED_SHA256,
+            **remediation_controls.PHASE7_AUTHORIZED_SHA256,
+            **remediation_controls.PHASE8_AUTHORIZED_SHA256,
+            **remediation_controls.PHASE9_AUTHORIZED_SHA256,
+        }
+        self.assertEqual(
+            remediation_controls.PHASE10_PRIOR_AUTHORIZED_SHA256,
+            expected_phase10,
+        )
+        self.assertEqual(len(expected_phase10), 45)
+
+    def test_one_byte_mutation_and_deletion_are_not_authorized(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            path = root / "reviewed.txt"
+            path.write_bytes(b"reviewed")
+            expected = {"reviewed.txt": hashlib.sha256(b"reviewed").hexdigest()}
+            self.assertTrue(remediation_controls.exact_authorized(root, "reviewed.txt", expected))
+            path.write_bytes(b"reviewed!")
+            self.assertFalse(remediation_controls.exact_authorized(root, "reviewed.txt", expected))
+            path.unlink()
+            self.assertFalse(remediation_controls.exact_authorized(root, "reviewed.txt", expected))
 
 
 if __name__ == "__main__":

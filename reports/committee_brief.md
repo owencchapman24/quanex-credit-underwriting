@@ -15,7 +15,7 @@ Primary repayment is recurring operating cash available for debt service after o
 
 | Metric | Result |
 |---|---:|
-| FY2025 lender-base EBITDA | $225.344m |
+| FY2025 lender-base EBITDA / historical cash-paid coverage | $225.344m / 4.2817x |
 | Opening funded debt / gross leverage | $727.517m / 3.2285x |
 | Base minimum all-in liquidity over forecast incl. opening | $263.902m |
 | Base minimum cash-interest coverage over forecast | 5.3860x |

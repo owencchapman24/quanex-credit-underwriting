@@ -551,6 +551,53 @@ class Phase6Tests(unittest.TestCase):
             text,
         )
 
+    def test_96_interest_due_paid_and_arrears_are_separate(self) -> None:
+        rows = phase6.run_case(phase6.scenario_by_id("SEVERE_NO_WAIVER"), "proposed")
+        previous_arrears = Decimal("0")
+        for row in rows:
+            due = phase6.dec(row["cash_interest_due"])
+            paid = phase6.dec(row["cash_interest_paid"])
+            shortfall = phase6.dec(row["cash_interest_shortfall"])
+            arrears = phase6.dec(row["cash_interest_arrears_balance"])
+            self.assertLessEqual(abs(due - paid - shortfall), phase6.TOLERANCE)
+            self.assertLessEqual(abs(arrears - previous_arrears - shortfall), phase6.TOLERANCE)
+            previous_arrears = arrears
+        self.assertGreater(previous_arrears, 0)
+
+    def test_97_ebitda_coverage_uses_due_while_cash_waterfall_uses_paid(self) -> None:
+        rows = phase6.run_case(phase6.scenario_by_id("SEVERE_NO_WAIVER"), "proposed")
+        target_index = next(i for i, row in enumerate(rows) if row["month_end"] == "2028-01-31")
+        target = rows[target_index]
+        window = rows[target_index - 11:target_index + 1]
+        ltm_due = sum((phase6.dec(row["cash_interest_due"]) for row in window), Decimal("0"))
+        ltm_paid = sum((phase6.dec(row["cash_interest_paid"]) for row in window), Decimal("0"))
+        self.assertEqual(phase6.dec(target["ltm_cash_interest_due_or_payable"]), ltm_due)
+        self.assertEqual(phase6.dec(target["ltm_cash_interest_paid"]), ltm_paid)
+        self.assertGreater(ltm_due, ltm_paid)
+        self.assertLessEqual(abs(
+            phase6.dec(target["ebitda_cash_interest_coverage"])
+            - phase6.dec(target["ttm_lender_base_ebitda"]) / ltm_due
+        ), phase6.TOLERANCE)
+        self.assertLessEqual(abs(
+            phase6.dec(target["cfads_cash_interest_coverage"])
+            - sum((phase6.dec(row["cfads_before_cash_interest"]) for row in window), Decimal("0")) / ltm_paid
+        ), phase6.TOLERANCE)
+
+    def test_98_fully_paid_and_unavailable_ltm_interest_cases(self) -> None:
+        rows = phase6.run_case(phase6.scenario_by_id("BASE"), "proposed")
+        self.assertTrue(all(
+            row["ltm_cash_interest_due_or_payable"] == ""
+            and row["ltm_cash_interest_paid"] == ""
+            and row["ebitda_cash_interest_coverage"] == ""
+            for row in rows[:11]
+        ))
+        first_ltm = rows[11]
+        self.assertEqual(
+            first_ltm["ltm_cash_interest_due_or_payable"],
+            first_ltm["ltm_cash_interest_paid"],
+        )
+        self.assertTrue(first_ltm["ebitda_cash_interest_coverage"])
+
 
 if __name__ == "__main__":
     unittest.main()

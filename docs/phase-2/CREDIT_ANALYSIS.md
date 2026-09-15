@@ -13,6 +13,7 @@ All amounts are USD millions except ratios. Reported growth after the Tyman acqu
 | Unadjusted EBITDA | 124.602 | 151.390 | 153.567 | 115.154 | -90.508 |
 | CFO | 78.588 | 97.965 | 147.052 | 88.812 | 164.897 |
 | Free cash flow | 54.580 | 64.844 | 109.662 | 51.726 | 102.255 |
+| Cash paid for interest | N/D | N/D | 5.737 | 10.910 | 52.630 |
 | Gross funded debt | 53.537 | 32.202 | 70.000 | 776.926 | 703.869 |
 
 ## Earnings-definition separation
@@ -56,8 +57,9 @@ The impairment reversal (AC-001), FY2024 transaction fees (AC-011), purchase-acc
 | Gross funded debt / lender-normalized EBITDA | 4.332x | 3.124x |
 | Net debt after book cash / lender-normalized EBITDA | 3.787x | 2.786x |
 | Lender-normalized EBITDA / GAAP interest expense | 8.710x | 4.038x |
+| Lender-normalized EBITDA / disclosed historical cash interest paid | 16.440x | 4.282x |
 
-Net debt after book cash is an analyst diagnostic, not covenant or lender net leverage. GAAP interest expense is only a coverage proxy because cash interest is not separately available.
+Net debt after book cash is an analyst diagnostic, not covenant or lender net leverage. GAAP interest expense remains a separate proxy. Disclosed FY2023-FY2025 cash paid for interest supports a historical diagnostic only; it is not contractual paid-or-payable interest, closing-LTM coverage, or certified compliance.
 
 ## Reconciliation conclusion
 

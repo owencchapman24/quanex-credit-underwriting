@@ -26,6 +26,12 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+from workbook_semantics import semantic_workbook_fingerprint
+from xlsx_package import canonicalize_xlsx
+
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data" / "phase8"
@@ -73,6 +79,102 @@ SOURCE_INPUTS = (
     "data/phase7/processed/SOURCES_AND_USES_RECONCILIATION.csv",
     "docs/phase-0/EVIDENCE_INVENTORY.csv",
     "docs/phase-7/SOURCE_LEDGER.csv",
+)
+
+DYNAMIC_TEST_DEFINITION_VERSION = "P8-DYNAMIC-2.0"
+DYNAMIC_TEST_ENGINE = "LibreOffice 26.8.0.3"
+DYNAMIC_TESTED_ARTIFACT = "model/Quanex_Credit_Underwriting.xlsx (Phase 8 pre-recalculation disposable test copy)"
+
+
+def _dynamic_case(
+    case_id: str,
+    test_name: str,
+    stage: str,
+    scenario: str,
+    input_scope: str,
+) -> dict[str, str]:
+    return {
+        "case_id": case_id,
+        "test_name": test_name,
+        "stage": stage,
+        "scenario": scenario,
+        "input_scope": input_scope,
+    }
+
+
+# This is the complete, ordered dynamic-test obligation for Phase 8.  The
+# evidence writer accepts exactly these independently identified cases; a
+# truncated file cannot pass merely because all surviving rows say PASS.
+REQUIRED_DYNAMIC_CASES = (
+    _dynamic_case("P8DT-001", "Base period cash and debt identities reconcile", "base_integrity", "Base", "Debt Schedule rows 12:47; cash, term, revolver, debt, and shortfall identities"),
+    _dynamic_case("P8DT-002", "Base Forecast and financing Q2 CFADS reconcile", "base_integrity", "Base", "Forecast!D22 and Debt Schedule!I12:I14"),
+    _dynamic_case("P8DT-003", "incomplete April 2026 LTM is N/D", "period_completeness", "Base", "Covenants row 9; April 2026 LTM availability"),
+    _dynamic_case("P8DT-004", "incomplete July 2026 LTM is N/D", "period_completeness", "Base", "Covenants row 10; July 2026 LTM availability"),
+    _dynamic_case("P8DT-005", "first complete EBITDA LTM calculates", "period_completeness", "Base", "Covenants row 11; first complete EBITDA LTM"),
+    _dynamic_case("P8DT-006", "first fully complete leverage and coverage test calculates", "period_completeness", "Base", "Covenants row 12; first complete leverage and due-interest coverage"),
+    _dynamic_case("P8DT-007", "scenario selector updates EBITDA", "scenario_selection", "Moderate unmitigated", "Assumptions!D4; Scenario Comparison!F5"),
+    _dynamic_case("P8DT-008", "severe EBITDA below moderate", "scenario_selection", "Severe unmitigated", "Assumptions!D4; EBITDA ordering"),
+    _dynamic_case("P8DT-009", "same debt schedule updates", "scenario_selection", "Severe unmitigated", "Assumptions!D4; Debt Schedule scenario label"),
+    _dynamic_case("P8DT-010", "historicals remain fixed", "scenario_selection", "Severe unmitigated", "Historicals!C7:N50 immutability"),
+    _dynamic_case("P8DT-011", "Selected severe case period identities reconcile", "scenario_integration", "Severe unmitigated", "Debt Schedule rows 12:47; all financing identities"),
+    _dynamic_case("P8DT-012", "Selected severe case Forecast and financing Q2 CFADS reconcile", "scenario_integration", "Severe unmitigated", "Forecast!D22 and Debt Schedule!I12:I14"),
+    _dynamic_case("P8DT-013", "amortization changes maturity gap", "financing_input", "Base", "Assumptions!D18 +250bp; Scenario Comparison!X5"),
+    _dynamic_case("P8DT-014", "April 2026 amortization changes scheduled payment", "financing_input", "Base", "Assumptions!D18 +250bp; Debt Schedule!K14"),
+    _dynamic_case("P8DT-015", "Amortization probe period identities reconcile", "financing_integration", "Base", "Assumptions!D18 +250bp; Debt Schedule rows 12:47"),
+    _dynamic_case("P8DT-016", "term amount changes opening term", "financing_input", "Base", "Assumptions!D12 +$5m; Debt Schedule!J12"),
+    _dynamic_case("P8DT-017", "Term-size probe period identities reconcile", "financing_integration", "Base", "Assumptions!D12 +$5m; Debt Schedule rows 12:47"),
+    _dynamic_case("P8DT-018", "non-debt contribution reduces opening debt", "financing_input", "Base", "Assumptions!D13 +$5m; Transaction!D17"),
+    _dynamic_case("P8DT-019", "Contribution probe period identities reconcile", "financing_integration", "Base", "Assumptions!D13 +$5m; Debt Schedule rows 12:47"),
+    _dynamic_case("P8DT-020", "interest spread changes cash interest", "financing_input", "Base", "Assumptions!D20 +100bp; Scenario Comparison!J5"),
+    _dynamic_case("P8DT-021", "interest spread changes interest due", "financing_input", "Base", "Assumptions!D20 +100bp; Debt Schedule!AE12:AE47"),
+    _dynamic_case("P8DT-022", "February 2026 spread probe cash identity reconciles", "financing_integration", "Base", "Assumptions!D20 +100bp; Debt Schedule!AP12"),
+    _dynamic_case("P8DT-023", "April 2026 spread probe cash identity reconciles", "financing_integration", "Base", "Assumptions!D20 +100bp; Debt Schedule!AP14"),
+    _dynamic_case("P8DT-024", "Spread probe period identities reconcile", "financing_integration", "Base", "Assumptions!D20 +100bp; Debt Schedule rows 12:47"),
+    _dynamic_case("P8DT-025", "EBITDA overlay changes EBITDA", "operating_input", "Base", "Assumptions!D21 -10%; Scenario Comparison!F5"),
+    _dynamic_case("P8DT-026", "EBITDA overlay flows through financing Q2 CFADS", "operating_integration", "Base", "Assumptions!D21 -10%; Forecast!D22 and Debt Schedule!I12:I14"),
+    _dynamic_case("P8DT-027", "EBITDA overlay period identities reconcile", "operating_integration", "Base", "Assumptions!D21 -10%; Debt Schedule rows 12:47"),
+    _dynamic_case("P8DT-028", "DSO change reduces CFADS", "operating_input", "Base", "Assumptions!D23 +5 days; Scenario Comparison!I5"),
+    _dynamic_case("P8DT-029", "DSO overlay flows through financing Q2 CFADS", "operating_integration", "Base", "Assumptions!D23 +5 days; Forecast!D22 and Debt Schedule!I12:I14"),
+    _dynamic_case("P8DT-030", "DSO overlay period identities reconcile", "operating_integration", "Base", "Assumptions!D23 +5 days; Debt Schedule rows 12:47"),
+    _dynamic_case("P8DT-031", "Combined rate amortization EBITDA and DSO probe reconciles Q2 CFADS", "combined_integration", "Base", "Assumptions!D18,D20,D21,D23 combined adverse edit; Q2 CFADS"),
+    _dynamic_case("P8DT-032", "Combined rate amortization EBITDA and DSO period identities reconcile", "combined_integration", "Base", "Assumptions!D18,D20,D21,D23 combined adverse edit; Debt Schedule rows 12:47"),
+    _dynamic_case("P8DT-033", "Combined adverse controls worsen financing outputs", "combined_integration", "Base", "Assumptions!D18,D20,D21,D23; maturity, liquidity, interest"),
+    _dynamic_case("P8DT-034", "exact leverage boundary is not breach", "boundary", "Base", "Assumptions!D21; exact 3.50x leverage boundary"),
+    _dynamic_case("P8DT-035", "above leverage boundary breaches", "boundary", "Base", "Assumptions!D21; leverage just above 3.50x"),
+    _dynamic_case("P8DT-036", "approved coverage and liquidity warning boundaries retained", "boundary", "Base", "Assumptions!D33=3.50x and D34=$75m"),
+    _dynamic_case("P8DT-037", "coverage just above warning boundary is compliant", "boundary", "Base", "Covenants!R12; coverage just above warning"),
+    _dynamic_case("P8DT-038", "coverage at warning boundary is warning", "boundary", "Base", "Covenants!R12; coverage equals warning"),
+    _dynamic_case("P8DT-039", "coverage just below warning boundary is warning", "boundary", "Base", "Covenants!R12; coverage just below warning"),
+    _dynamic_case("P8DT-040", "liquidity just above warning boundary is compliant", "boundary", "Base", "Liquidity!R13; liquidity just above warning"),
+    _dynamic_case("P8DT-041", "liquidity at warning boundary is warning", "boundary", "Base", "Liquidity!R13; liquidity equals warning"),
+    _dynamic_case("P8DT-042", "liquidity just below warning boundary is warning", "boundary", "Base", "Liquidity!R13; liquidity just below warning"),
+    _dynamic_case("P8DT-043", "zero EBITDA with complete inputs is N/M", "missing_value", "Base", "Assumptions!D21=-100%; complete covenant period"),
+    _dynamic_case("P8DT-044", "negative EBITDA with complete inputs is N/M", "missing_value", "Base", "Assumptions!D21=-200%; complete covenant period"),
+    _dynamic_case("P8DT-045", "missing due-or-payable interest is N/D", "missing_value", "Base", "Assumptions!D19 blank; due-interest coverage"),
+    _dynamic_case("P8DT-046", "zero due-or-payable interest is N/M", "missing_value", "Base", "Assumptions!D19=0; due-interest coverage"),
+    _dynamic_case("P8DT-047", "negative due-or-payable interest is N/M", "missing_value", "Base", "Assumptions!D19=-1%; due-interest coverage"),
+    _dynamic_case("P8DT-048", "liquidity overlay can exhaust revolver", "tight_liquidity", "Base", "Assumptions!D25=-$500m; revolver availability"),
+    _dynamic_case("P8DT-049", "tight-liquidity case preserves due versus paid shortfalls", "tight_liquidity", "Base", "Assumptions!D25=-$500m; due, paid, and shortfall columns"),
+    _dynamic_case("P8DT-050", "Tight-liquidity case period identities reconcile", "tight_liquidity", "Base", "Assumptions!D25=-$500m; Debt Schedule rows 12:47"),
+    _dynamic_case("P8DT-051", "covenant-linked draw shutoff is visible", "no_waiver", "Moderate Phase 7 covenant-linked no-waiver", "Assumptions!D4; first draw-shutoff output"),
+    _dynamic_case("P8DT-052", "no-waiver shutoff prevents new revolver draws", "no_waiver", "Moderate Phase 7 covenant-linked no-waiver", "Debt Schedule shutoff rows and revolver draws"),
+    _dynamic_case("P8DT-053", "No-waiver stress period identities reconcile", "no_waiver", "Moderate Phase 7 covenant-linked no-waiver", "Debt Schedule rows 12:47"),
+    _dynamic_case("P8DT-054", "ECF sweep assumption changes sweep", "financing_input", "Base", "Assumptions!D26=0%; Scenario Comparison!L5"),
+    _dynamic_case("P8DT-055", "cash-floor safeguard suppresses sweep", "financing_input", "Base", "Assumptions!D24=$400m; Scenario Comparison!L5"),
+    _dynamic_case("P8DT-056", "legacy weighted input signature collision is reproduced", "freshness", "Base", "Assumptions!D12 +$5m,D13 -$7.5m,D15 balancing draw; legacy weighted state"),
+    _dynamic_case("P8DT-057", "typed input state catches balanced funding collision", "freshness", "Base", "Assumptions!D12 +$5m,D13 -$7.5m,D15 balancing draw; typed live state"),
+    _dynamic_case("P8DT-058", "snapshot stale flag activates", "freshness", "Base", "Assumptions!D12 +$1m; Scenario Comparison!AE12"),
+    _dynamic_case("P8DT-059", "Base parity restored", "restore", "Base", "all Phase 8 dynamic edits reset; selected outputs"),
+    _dynamic_case("P8DT-060", "final scenario restored to Base", "restore", "Base", "Assumptions!D4 final saved state"),
+)
+
+DYNAMIC_EVIDENCE_FIELDS = (
+    "evidence_id", "case_id", "test_name", "stage", "scenario", "input_scope",
+    "status", "observed", "engine", "final_scenario", "test_definition_version",
+    "test_definition_sha256", "dynamic_script_sha256", "workbook_builder_sha256",
+    "semantic_comparator_sha256",
+    "source_input_signature", "tested_artifact", "tested_artifact_sha256",
+    "tested_artifact_semantic_fingerprint",
 )
 
 
@@ -464,6 +566,7 @@ def run_libreoffice(mode: str, workbook: Path = MODEL, report: Path | None = Non
             print(result.stderr, file=sys.stderr, end="")
         if result.returncode:
             raise Phase8Error(f"LibreOffice {mode} failed with exit code {result.returncode}")
+        canonicalize_xlsx(workbook)
         return json.loads(report.read_text(encoding="utf-8"))
     finally:
         if temporary_report:
@@ -553,43 +656,204 @@ def workbook_structure() -> dict[str, object]:
     }
 
 
-def dynamic_evidence_state() -> tuple[str, str]:
-    if not DYNAMIC_EVIDENCE.is_file():
-        return "NOT_RUN", "dynamic evidence file absent"
-    rows = read_csv(DYNAMIC_EVIDENCE)
-    if not rows:
-        return "NOT_RUN", "dynamic evidence file empty"
-    current_script = sha256(ROOT / "scripts" / "recalculate-phase8.py")
-    current_builder = sha256(ROOT / "scripts" / "build-phase8.mjs")
-    if any(row.get("dynamic_script_sha256") != current_script or row.get("workbook_builder_sha256") != current_builder for row in rows):
-        return "N/D", "dynamic evidence does not match current workbook logic"
-    if any(row.get("source_input_signature") != source_signature() for row in rows):
-        return "N/D", "dynamic evidence does not match current source inputs"
-    if any(row.get("status") == "FAIL" for row in rows):
-        return "FAIL", "one or more dynamic tests failed"
-    if not all(row.get("status") == "PASS" for row in rows):
-        return "N/D", "dynamic evidence is incomplete"
-    return "PASS", f"{len(rows)} separately recorded dynamic tests"
+def dynamic_test_definition_sha256() -> str:
+    serialized = json.dumps(
+        {"version": DYNAMIC_TEST_DEFINITION_VERSION, "cases": REQUIRED_DYNAMIC_CASES},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
-def write_dynamic_evidence(report: dict[str, object]) -> list[dict[str, object]]:
-    tests = report.get("tests", [])
-    if report.get("dynamic_status") != "PASS" or not isinstance(tests, list) or not tests:
-        DYNAMIC_EVIDENCE.unlink(missing_ok=True)
-        return []
-    rows = [{
-        "evidence_id": f"P8DE-{index:03d}",
-        "test_name": str(item.get("test", "")),
-        "status": str(item.get("status", "N/D")),
-        "observed": json.dumps(item.get("observed"), sort_keys=True, separators=(",", ":")),
-        "engine": str(report.get("engine", "")),
-        "final_scenario": str(report.get("final_scenario", "")),
+def dynamic_runtime_metadata(
+    *,
+    artifact_sha256: str,
+    artifact_fingerprint: str,
+    tested_artifact: str | None = None,
+) -> dict[str, str]:
+    return {
+        "engine": DYNAMIC_TEST_ENGINE,
+        "final_scenario": "Base",
+        "test_definition_version": DYNAMIC_TEST_DEFINITION_VERSION,
+        "test_definition_sha256": dynamic_test_definition_sha256(),
         "dynamic_script_sha256": sha256(ROOT / "scripts" / "recalculate-phase8.py"),
         "workbook_builder_sha256": sha256(ROOT / "scripts" / "build-phase8.mjs"),
+        "semantic_comparator_sha256": sha256(ROOT / "scripts" / "workbook_semantics.py"),
         "source_input_signature": source_signature(),
-        "tested_artifact": "disposable copy of model/Quanex_Credit_Underwriting.xlsx",
-    } for index, item in enumerate(tests, 1)]
-    write_csv(DYNAMIC_EVIDENCE, rows)
+        "tested_artifact": tested_artifact or DYNAMIC_TESTED_ARTIFACT,
+        "tested_artifact_sha256": artifact_sha256,
+        "tested_artifact_semantic_fingerprint": artifact_fingerprint,
+    }
+
+
+def dynamic_evidence_artifact_identity(
+    evidence_path: Path | None = None,
+) -> tuple[str, str] | None:
+    """Return the single tested artifact identity, if evidence is coherent."""
+    evidence_path = DYNAMIC_EVIDENCE if evidence_path is None else evidence_path
+    if not evidence_path.is_file():
+        return None
+    rows = read_csv(evidence_path)
+    shas = {row.get("tested_artifact_sha256", "") for row in rows}
+    fingerprints = {row.get("tested_artifact_semantic_fingerprint", "") for row in rows}
+    if len(shas) != 1 or len(fingerprints) != 1:
+        return None
+    artifact_sha, artifact_fingerprint = next(iter(shas)), next(iter(fingerprints))
+    if not re.fullmatch(r"[0-9a-f]{64}", artifact_sha) or not re.fullmatch(r"[0-9a-f]{64}", artifact_fingerprint):
+        return None
+    return artifact_sha, artifact_fingerprint
+
+
+def dynamic_evidence_state(
+    evidence_path: Path | None = None,
+    *,
+    tested_artifact: str | None = None,
+) -> tuple[str, str]:
+    custom_evidence = evidence_path is not None
+    evidence_path = DYNAMIC_EVIDENCE if evidence_path is None else evidence_path
+    if not evidence_path.is_file():
+        return "NOT_RUN", "dynamic evidence file absent"
+    rows = read_csv(evidence_path)
+    if not rows:
+        return "NOT_RUN", "dynamic evidence file empty"
+
+    if any(set(row) != set(DYNAMIC_EVIDENCE_FIELDS) for row in rows):
+        return "FAIL", "dynamic evidence schema is incomplete or unexpected"
+    blank_fields = [
+        field for field in DYNAMIC_EVIDENCE_FIELDS
+        if any(not row.get(field, "").strip() for row in rows)
+    ]
+    if blank_fields:
+        return "FAIL", "dynamic evidence metadata is blank: " + ", ".join(blank_fields)
+
+    expected_by_name = {case["test_name"]: case for case in REQUIRED_DYNAMIC_CASES}
+    names = [row["test_name"] for row in rows]
+    case_ids = [row["case_id"] for row in rows]
+    evidence_ids = [row["evidence_id"] for row in rows]
+    if len(names) != len(set(names)) or len(case_ids) != len(set(case_ids)) or len(evidence_ids) != len(set(evidence_ids)):
+        return "FAIL", "dynamic evidence contains duplicate test names, case IDs, or evidence IDs"
+    if set(names) != set(expected_by_name) or len(rows) != len(REQUIRED_DYNAMIC_CASES):
+        missing = sorted(set(expected_by_name) - set(names))
+        extra = sorted(set(names) - set(expected_by_name))
+        return "FAIL", f"dynamic evidence case set mismatch; missing={missing}; extra={extra}"
+
+    expected_evidence_ids = {
+        case["test_name"]: f"P8DE-{index:03d}"
+        for index, case in enumerate(REQUIRED_DYNAMIC_CASES, 1)
+    }
+    for row in rows:
+        case = expected_by_name[row["test_name"]]
+        for field in ("case_id", "stage", "scenario", "input_scope"):
+            if row[field] != case[field]:
+                return "FAIL", f"dynamic evidence {field} mismatch for {row['test_name']}"
+        if row["evidence_id"] != expected_evidence_ids[row["test_name"]]:
+            return "FAIL", f"dynamic evidence ID mismatch for {row['test_name']}"
+
+    identity = dynamic_evidence_artifact_identity(evidence_path)
+    if identity is None:
+        return "FAIL", "dynamic evidence tested-artifact identity is missing or inconsistent"
+    artifact_sha, artifact_fingerprint = identity
+    expected_metadata = dynamic_runtime_metadata(
+        artifact_sha256=artifact_sha,
+        artifact_fingerprint=artifact_fingerprint,
+        tested_artifact=tested_artifact,
+    )
+    for field, expected in expected_metadata.items():
+        if any(row[field] != expected for row in rows):
+            return "FAIL", f"dynamic evidence does not match current {field}"
+
+    # The Phase 8 evidence can be validated either while its artifact is still
+    # the current workbook or after Phase 9 has recorded that exact artifact as
+    # its pre-overlay baseline.  A later-stage workbook is not compared to the
+    # earlier artifact as though the two were the same file.
+    current_match = sha256(MODEL) == artifact_sha
+    if current_match and normalized_fingerprint() != artifact_fingerprint:
+        return "FAIL", "dynamic evidence semantic fingerprint does not match its tested artifact"
+    if not current_match:
+        if custom_evidence:
+            return "FAIL", "custom dynamic evidence does not identify the current workbook artifact"
+        baseline_path = ROOT / "data" / "phase9" / "processed" / "PHASE8_BASELINE_VERIFICATION.csv"
+        if not baseline_path.is_file():
+            return "FAIL", "tested Phase 8 artifact is no longer current and no pre-overlay identity record exists"
+        baseline_rows = read_csv(baseline_path)
+        if len(baseline_rows) != 1:
+            return "FAIL", "Phase 8 pre-overlay identity record is not unique"
+        baseline = baseline_rows[0]
+        if (
+            baseline.get("status") != "PASS"
+            or baseline.get("tested_artifact_sha256") != artifact_sha
+            or baseline.get("observed_normalized_fingerprint") != artifact_fingerprint
+        ):
+            return "FAIL", "dynamic evidence does not match the recorded Phase 8 pre-overlay artifact"
+
+    statuses = {row["status"] for row in rows}
+    if "FAIL" in statuses:
+        return "FAIL", "one or more dynamic tests failed"
+    if statuses.intersection({"NOT_RUN", "NOT RUN"}):
+        return "NOT_RUN", "one or more required dynamic tests were not run"
+    if statuses != {"PASS"}:
+        return "FAIL", "dynamic evidence contains an unsupported or incomplete status"
+    return "PASS", (
+        f"{len(rows)} required dynamic cases passed under "
+        f"{DYNAMIC_TEST_DEFINITION_VERSION}"
+    )
+
+
+def write_dynamic_evidence(
+    report: dict[str, object],
+    evidence_path: Path | None = None,
+    *,
+    tested_artifact: str | None = None,
+) -> list[dict[str, object]]:
+    evidence_path = DYNAMIC_EVIDENCE if evidence_path is None else evidence_path
+    tests = report.get("tests", [])
+    if report.get("dynamic_status") != "PASS" or not isinstance(tests, list) or not tests:
+        evidence_path.unlink(missing_ok=True)
+        return []
+
+    names = [str(item.get("test", "")) for item in tests if isinstance(item, dict)]
+    if len(names) != len(tests) or len(names) != len(set(names)):
+        evidence_path.unlink(missing_ok=True)
+        raise Phase8Error("Dynamic report contains duplicate or malformed test records")
+    required_by_name = {case["test_name"]: case for case in REQUIRED_DYNAMIC_CASES}
+    if set(names) != set(required_by_name) or len(tests) != len(REQUIRED_DYNAMIC_CASES):
+        evidence_path.unlink(missing_ok=True)
+        missing = sorted(set(required_by_name) - set(names))
+        extra = sorted(set(names) - set(required_by_name))
+        raise Phase8Error(f"Dynamic report case set mismatch; missing={missing}; extra={extra}")
+    if any(str(item.get("status", "")) != "PASS" for item in tests):
+        evidence_path.unlink(missing_ok=True)
+        raise Phase8Error("Dynamic report includes a required test that did not PASS")
+    if any("observed" not in item for item in tests):
+        evidence_path.unlink(missing_ok=True)
+        raise Phase8Error("Dynamic report omits observed evidence for a required test")
+
+    current_sha = sha256(MODEL)
+    current_fingerprint = normalized_fingerprint()
+    metadata = dynamic_runtime_metadata(
+        artifact_sha256=current_sha,
+        artifact_fingerprint=current_fingerprint,
+        tested_artifact=tested_artifact,
+    )
+    for field in (
+        "engine", "final_scenario", "tested_artifact", "tested_artifact_sha256",
+        "tested_artifact_semantic_fingerprint",
+    ):
+        if str(report.get(field, "")) != metadata[field]:
+            evidence_path.unlink(missing_ok=True)
+            raise Phase8Error(f"Dynamic report {field} does not identify the current tested artifact")
+
+    observed_by_name = {str(item["test"]): item.get("observed") for item in tests}
+    rows: list[dict[str, object]] = []
+    for index, case in enumerate(REQUIRED_DYNAMIC_CASES, 1):
+        rows.append({
+            "evidence_id": f"P8DE-{index:03d}",
+            **case,
+            "status": "PASS",
+            "observed": json.dumps(observed_by_name[case["test_name"]], sort_keys=True, separators=(",", ":")),
+            **metadata,
+        })
+    write_csv(evidence_path, rows, list(DYNAMIC_EVIDENCE_FIELDS))
     return rows
 
 
@@ -597,6 +861,7 @@ def validate_workbook(
     engine_report: dict[str, object] | None = None,
     *,
     require_dynamic: bool = True,
+    write_outputs: bool = True,
 ) -> list[dict[str, object]]:
     required = [
         "Credit Summary", "Assumptions", "Scenario Comparison", "Historicals", "Credit Adjustments",
@@ -676,8 +941,9 @@ def validate_workbook(
             "tolerance": fmt(TOLERANCE), "status": "PASS" if passed else "FAIL",
         })
     add("closing coverage remains N/D", parity.get("closing_coverage") == "N/D", parity.get("closing_coverage"), "N/D", "parity")
-    write_csv(PROCESSED / "FORMULA_PARITY_RESULTS.csv", parity_rows)
-    write_csv(PROCESSED / "WORKBOOK_VALIDATION_RESULTS.csv", controls)
+    if write_outputs:
+        write_csv(PROCESSED / "FORMULA_PARITY_RESULTS.csv", parity_rows)
+        write_csv(PROCESSED / "WORKBOOK_VALIDATION_RESULTS.csv", controls)
     failed = [
         row for row in controls
         if row["status"] == "FAIL" or (require_dynamic and row["status"] != "PASS")
@@ -712,7 +978,7 @@ def write_workbook_map() -> None:
 
 def write_docs() -> None:
     DOCS.mkdir(parents=True, exist_ok=True)
-    (DOCS / "METHODOLOGY.md").write_text("""# Phase 8 methodology
+    (DOCS / "METHODOLOGY.md").write_text(f"""# Phase 8 methodology
 
 Phase 8 translates the approved Phase 0-7 Python and CSV analysis into one lender-facing `.xlsx` model. It does not revise the 21 owner-reviewed Phase 7 decisions. The calculation direction is `Historicals + Sources + Assumptions -> Transaction + Forecast -> Debt Schedule + Liquidity -> Covenants -> Credit Summary + Scenario Comparison -> Checks`; `Checks` has no outbound dependencies.
 
@@ -724,7 +990,7 @@ Reported history and approved prior-phase calculated values are imported with so
 
 ## Scenario captures and engine
 
-The workbook is authored with the bundled `@oai/artifact-tool` runtime and reproducibly recalculated by LibreOffice 26.8.0.3. Microsoft Excel for Microsoft 365 provides a separate compatibility gate. The capture workflow selects each of nine approved cases, fully recalculates, stores headline values and signatures, restores Base, recalculates and saves. Captures are snapshots, not parallel live forecasts. A formula-driven stale flag compares each captured signature with the current input signature. Dynamic interaction evidence is stored separately and can pass only when the disposable-copy test actually ran, matched the current scripts and source signature, and every recorded test passed.
+The workbook is authored with the bundled `@oai/artifact-tool` runtime and reproducibly recalculated by LibreOffice 26.8.0.3. Microsoft Excel for Microsoft 365 provides a separate compatibility gate. The capture workflow selects each of nine approved cases, fully recalculates, stores headline values and typed input states, restores Base, recalculates and saves. Captures are snapshots, not parallel live forecasts. A formula-driven stale flag compares each captured typed state with the complete current input state; numeric serialization is normalized at 12 decimal places to avoid sub-ULP cross-engine noise while retaining sensitivity far below any economically meaningful input increment. Dynamic interaction evidence is stored separately under `{DYNAMIC_TEST_DEFINITION_VERSION}`: all {len(REQUIRED_DYNAMIC_CASES)} explicitly identified cases must be unique and PASS, with matching stage, scenario, input scope, engine, scripts, builder, source signature, test-definition digest, and tested-artifact identity. Missing, truncated, duplicated, failed, not-run, or stale evidence cannot pass.
 
 The Transaction sheet separates the October 31, 2025 historical debt reference from January 31, 2026 projected alternatives. Term sizing uses approved Phase 7 source pairings and reports sources less uses explicitly. Amortization sensitivity reruns the selected structure through the Phase 7 cash, revolver, interest, sweep, liquidity, covenant, and maturity engine; it is not a shortcut maturity-gap adjustment. Incomplete LTM periods display `N/D`; `N/M` is reserved for complete periods with nonpositive EBITDA or another nonpositive required denominator.
 
@@ -746,19 +1012,19 @@ A `STALE` capture status means a modeled assumption or structure input changed a
 
 The workbook is not a lender commitment, official compliance certificate, final credit recommendation, final risk grade, or recovery analysis.
 """, encoding="utf-8")
-    (DOCS / "CALCULATION_VALIDATION.md").write_text("""# Calculation validation
+    (DOCS / "CALCULATION_VALIDATION.md").write_text(f"""# Calculation validation
 
 The Phase 8 workflow builds the workbook with the bundled artifact runtime, recalculates every approved scenario in LibreOffice 26.8.0.3, captures comparisons, restores Base, saves, and then validates structure and cached results. USD-million and ratio parity use a 0.002 tolerance.
 
-Controls cover the exact 14-sheet order, native formulas and charts, terminal `Checks`, external links, cached formula errors, calculation mode, workbook checks, Base restoration, Python-to-workbook numeric points, same-date alternative comparisons, balanced Phase 7 sizing pairings, and closing coverage remaining `N/D`. The disposable dynamic copy tests scenario changes, fixed historicals, term size, contribution, amortization, rate and spread, EBITDA, DSO, exact covenant boundaries, incomplete LTM periods, complete zero/negative denominators, missing interest, revolver exhaustion, draw shutoff, cash-floor and sweep safeguards, stale capture status, and full Base restoration. An unrun or unsupported dynamic gate remains `NOT_RUN` or `N/D`; it cannot pass.
+Controls cover the exact 14-sheet order, native formulas and charts, terminal `Checks`, external links, cached formula errors, calculation mode, workbook checks, Base restoration, Python-to-workbook numeric points, same-date alternative comparisons, balanced Phase 7 sizing pairings, and closing coverage remaining `N/D`. The disposable dynamic copy tests scenario changes, fixed historicals, term size, contribution, amortization, rate and spread, EBITDA, DSO, exact covenant boundaries, incomplete LTM periods, complete zero/negative denominators, missing interest, revolver exhaustion, draw shutoff, cash-floor and sweep safeguards, stale capture status, and full Base restoration. The `{DYNAMIC_TEST_DEFINITION_VERSION}` registry contains {len(REQUIRED_DYNAMIC_CASES)} required case identities; exact completeness, uniqueness, PASS status, runtime metadata, test-definition digest, and tested-artifact identity are enforced. An absent or explicitly not-run gate is `NOT_RUN`; malformed, stale, truncated, duplicated, failed, or unsupported evidence is `FAIL`.
 
-The post-commit Excel compatibility control maps `sheet14.xml` to `Checks`, rejects OOXML formula text with a leading equals sign, and rejects inline array constants passed to range-only criteria functions. The bounded audit-remediation workbook contains 2,742 Phase 8 cell formulas before later-phase overlays. Its normalized Phase 8 fingerprint is `3f66a86542015ee20dc9812b99f00cfbcc84b8a56e78173247e5a5a77a7922dd`; the change from the earlier compatibility fingerprint reflects the intended same-date transaction, integrated sensitivity, LTM completeness, and validation-evidence revisions.
+The post-commit Excel compatibility control maps `sheet14.xml` to `Checks`, rejects OOXML formula text with a leading equals sign, and rejects inline array constants passed to range-only criteria functions. The bounded audit-remediation workbook contains 3,318 Phase 8 cell formulas before later-phase overlays. Its normalized Phase 8 fingerprint is `a0c7329eca85e5d830e74394a9e7b72eacfc0aee3c93ee920901321397a6ed80`; the change from the earlier compatibility fingerprint reflects the intended live cash/debt integration, deterministic package canonicalization, same-date transaction, sensitivity, LTM completeness, canonical source-byte generation, validation-evidence revisions, and cross-engine typed-state normalization.
 
-Microsoft Excel for Microsoft 365 version 16.0 build 20326 opened the corrected workbook without repair, ran a full calculation rebuild, updated a non-Base scenario, restored Base, saved, closed, and reopened a disposable copy. Formula counts and the Base output remained intact, and no recovery log was generated. Run `powershell -ExecutionPolicy Bypass -NoProfile -File scripts/validate-phase8-excel.ps1` for this separate Excel gate.
+Microsoft Excel for Microsoft 365 version 16.0 build 20326 opened the corrected workbook without repair, ran a full calculation rebuild, updated a non-Base scenario, restored Base, saved, closed, and reopened a disposable copy. Formula counts and the Base output remained intact, all nine captures were `CURRENT`, both capture-freshness checks were `PASS` before save and after reopen, and no recovery log was generated. The artifact renderer independently requires the same nine `CURRENT` states and both `PASS` checks after rendering. Run `powershell -ExecutionPolicy Bypass -NoProfile -File scripts/validate-phase8-excel.ps1` for the separate Excel gate.
 
 All sheets are rendered to temporary PNG previews through the artifact runtime and inspected for formulas, styles, hierarchy, widths, status text and chart placement. LibreOffice applies bounded print areas, landscape orientation on wide schedules, fit-to-width settings, and repeated header rows on long tables.
 
-Native engine metadata, capture timestamps, chart-axis identifiers, and sub-point drawing coordinates can change between runs. Deterministic testing therefore compares source signatures and normalized workbook components, excluding volatile core properties, capture timestamp strings, calculation-chain metadata, and engine-rounded drawing-coordinate serialization while canonically mapping chart-axis identifiers. Chart placement is separately validated by structural tests and rendered-sheet review. This is not a claim of byte-identical `.xlsx` archives.
+Native engine metadata and chart-axis identifiers can change during recalculation. The authoritative generated package therefore receives an atomic, deterministic packaging pass that fixes neutral core metadata, remaps chart-axis references consistently, and emits fixed ZIP metadata; repeated same-input production builds are tested for byte identity. Cross-engine review still compares source signatures and normalized workbook components because disposable copies saved by different spreadsheet engines need not be byte-identical. Chart placement remains separately validated by structural tests and rendered-sheet review.
 """, encoding="utf-8")
     (DOCS / "PHASE9_HANDOFF.md").write_text("""# Phase 9 handoff
 
@@ -785,9 +1051,7 @@ def update_readme() -> None:
     path = ROOT / "README.md"
     text = path.read_text(encoding="utf-8")
     marker = "## Phase 8 Excel underwriting model"
-    if marker in text:
-        return
-    addition = """
+    section = """
 
 ## Phase 8 Excel underwriting model
 
@@ -800,9 +1064,15 @@ python scripts/phase8.py all
 python -m unittest discover -s tests -v
 ```
 
-The workbook preserves the approved Phase 7 provisional structure. The conditional $15 million source, closing cash interest, legal definitions and other diligence items remain unresolved. Recovery analysis remains pending Phase 9, and no final credit recommendation is made.
+The workbook preserves the approved Phase 7 provisional structure. At Phase 8 completion, recovery analysis and the final recommendation were still pending; those historical phase boundaries do not supersede the current **Conditional Approval** recommendation above. The conditional $15 million source, closing cash-interest evidence, legal definitions, and other stated diligence items remain unresolved.
 """
-    path.write_text(text.rstrip() + addition + "\n", encoding="utf-8")
+    if marker not in text:
+        path.write_text(text.rstrip() + section + "\n", encoding="utf-8")
+        return
+    prefix, existing = text.split(marker, 1)
+    next_section = existing.find("\n## ")
+    suffix = "" if next_section < 0 else existing[next_section:]
+    path.write_text(prefix.rstrip() + section.rstrip() + suffix.rstrip() + "\n", encoding="utf-8")
 
 
 def build() -> dict[str, object]:
@@ -845,47 +1115,39 @@ def visual(preview_dir: Path | None = None) -> dict[str, object]:
     return {"preview_dir": str(preview_dir), "preview_count": len(previews)}
 
 
-def dynamic() -> dict[str, object]:
+def dynamic(
+    evidence_path: Path | None = None,
+    *,
+    tested_artifact: str | None = None,
+) -> dict[str, object]:
+    evidence_path = DYNAMIC_EVIDENCE if evidence_path is None else evidence_path
+    tested_artifact = tested_artifact or DYNAMIC_TESTED_ARTIFACT
     with tempfile.TemporaryDirectory(prefix="quanex-phase8-dynamic-") as temp_name:
         copy = Path(temp_name) / MODEL.name
         shutil.copy2(MODEL, copy)
+        tested_artifact_sha256 = sha256(copy)
+        tested_artifact_fingerprint = normalized_fingerprint()
         report = run_libreoffice("dynamic", copy)
+        report["tested_artifact"] = tested_artifact
+        report["tested_artifact_sha256"] = tested_artifact_sha256
+        report["tested_artifact_semantic_fingerprint"] = tested_artifact_fingerprint
     if report.get("dynamic_status") != "PASS":
-        DYNAMIC_EVIDENCE.unlink(missing_ok=True)
+        evidence_path.unlink(missing_ok=True)
         raise Phase8Error("Dynamic workbook tests failed")
-    write_dynamic_evidence(report)
+    write_dynamic_evidence(
+        report, evidence_path=evidence_path, tested_artifact=tested_artifact,
+    )
     return report
 
 
 def normalized_fingerprint() -> str:
-    excluded = {"docProps/core.xml", "xl/calcChain.xml", "xl/sharedStrings.xml"}
-    digest = hashlib.sha256()
-    digest.update(source_signature().encode("ascii"))
-    digest.update((ROOT / "scripts" / "build-phase8.mjs").read_bytes())
-    with zipfile.ZipFile(MODEL) as archive:
-        for name in sorted(archive.namelist()):
-            if name in excluded:
-                continue
-            if name.startswith("xl/drawings/drawing") and name.endswith(".xml"):
-                continue
-            data = archive.read(name)
-            if name.startswith("xl/charts/chart") and name.endswith(".xml"):
-                axis_ids: dict[bytes, bytes] = {}
-
-                def normalize_axis_id(match: re.Match[bytes]) -> bytes:
-                    original = match.group(2)
-                    if original not in axis_ids:
-                        axis_ids[original] = str(len(axis_ids) + 1).encode("ascii")
-                    return match.group(1) + axis_ids[original] + match.group(3)
-
-                data = re.sub(
-                    rb'(<c:(?:axId|crossAx) val=")(\d+)("/>)',
-                    normalize_axis_id,
-                    data,
-                )
-            digest.update(name.encode("utf-8"))
-            digest.update(data)
-    return digest.hexdigest()
+    return semantic_workbook_fingerprint(
+        MODEL,
+        prefix_parts=(
+            source_signature().encode("ascii"),
+            (ROOT / "scripts" / "build-phase8.mjs").read_bytes(),
+        ),
+    )
 
 
 def all_workflow() -> None:
@@ -911,7 +1173,7 @@ def main() -> None:
     elif args.command == "build":
         print(json.dumps(build(), indent=2))
     elif args.command == "validate":
-        print(f"Phase 8 validation: PASS ({len(validate_workbook())} controls)")
+        print(f"Phase 8 validation: PASS ({len(validate_workbook(write_outputs=False))} controls)")
     elif args.command == "dynamic":
         print(json.dumps(dynamic(), indent=2))
     elif args.command == "visual":

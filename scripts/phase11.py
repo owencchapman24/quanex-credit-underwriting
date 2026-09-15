@@ -17,7 +17,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,16 +28,45 @@ DOCS = ROOT / "docs" / "phase-11"
 MODEL = ROOT / "model" / "Quanex_Credit_Underwriting.xlsx"
 MEMO = ROOT / "reports" / "credit_memo.pdf"
 BRIEF = ROOT / "reports" / "committee_brief.pdf"
+# Historical Phase 11 starting checkpoint.  Release verification resolves the
+# commit selected by the caller and never treats this historical SHA as the
+# current release candidate.
 APPROVED_PHASE10_COMMIT = "ce656ebfca67f2bd34a78273f72367e39c0c2037"
 APPROVED_PHASE10_PARENT = "9fca23a949d1f8d8dee6f37906cb086ec6cda994"
-APPROVED_WORKBOOK_SHA = "a1fdd2604468e8b795f2bd4330fe78821b66570fd4d728313b98963b01f671d4"
-APPROVED_WORKBOOK_SIZE = 286_530
-APPROVED_WORKBOOK_FINGERPRINT = "cf536570671a6baf2a7b019d46444cb839bb906943af8f0f22929772c04303ec"
-EXPECTED_FORMULA_COUNT = 2897
-APPROVED_MEMO_SHA = "9f0b8deb55ccd46729b2a03c97fc0aee63faa31e6ff73702296bda0417629198"
-APPROVED_BRIEF_SHA = "f4452cb1c22272158d5720b259eaa8669bf234467b1cc671b5fda72c2547a801"
+APPROVED_WORKBOOK_SHA = "6e31a259aebe14b4e9a379348d4b686f6a1148a6db743c72646a783321167454"
+APPROVED_WORKBOOK_SIZE = 301_362
+APPROVED_WORKBOOK_FINGERPRINT = "4d927e955f1cc9ede829aab41b26e43f62cfe23812d5018f54c12b73028b923a"
+EXPECTED_FORMULA_COUNT = 3473
+APPROVED_MEMO_SHA = "dea0465ae7ee29be0c993c1ac4f57ac396b872763b2c657fded1edcb9c5e95b8"
+APPROVED_BRIEF_SHA = "af8d3799f511daa77df202274b4d7dde670e2e6b04c0c4c98f482b896a5627d6"
 INFORMATION_CUTOFF = "2025-12-15"
 RELEASE_STATUS = "GO_TO_OWNER_REVIEW"
+RELEASE_MODE = "clean_release"
+OVERLAY_MODE = "precommit_overlay_review"
+PHASE11_GENERATED_OUTPUT_PATHS = frozenset({
+    "data/phase11/processed/ARTIFACT_MANIFEST.csv",
+    "data/phase11/processed/DEPENDENCY_INVENTORY.csv",
+    "data/phase11/processed/LINK_CHECK_RESULTS.csv",
+    "data/phase11/processed/REPRODUCIBILITY_RESULTS.csv",
+    "data/phase11/processed/VALIDATION_RESULTS.csv",
+    "docs/phase-11/SOURCE_LEDGER.csv",
+})
+EXCEL_PHASE8_REQUIRED_PROBE_CASES = frozenset({
+    "base",
+    "spread_plus_100bp",
+    "amortization_10_percent",
+    "fy2026_q2_ebitda_plus_10_percent",
+    "dso_plus_10_days",
+    "combined_rate_amortization_ebitda_dso",
+    "tight_liquidity",
+    "no_waiver_stress",
+    "balanced_funding_signature_collision",
+    "warning_threshold_equalities",
+})
+EXCEL_PHASE9_REQUIRED_METHODS = frozenset({
+    "none", "ribbon_calculate_now", "calculate_sheet", "f9",
+    "ctrl_alt_f9", "ctrl_alt_shift_f9",
+})
 GIT_WINDOWS_TEXT_ENV = {
     "GIT_CONFIG_COUNT": "1",
     "GIT_CONFIG_KEY_0": "core.autocrlf",
@@ -139,6 +168,37 @@ def git_status(root: Path = ROOT) -> str:
     ).stdout
 
 
+def git_config_digest(root: Path = ROOT) -> str:
+    """Hash repository-local, global, and system Git configuration read-only.
+
+    Only the digest is retained so release evidence can prove that verification
+    did not mutate Git configuration without exposing identity or credential
+    helper settings in logs.
+    """
+    digest = hashlib.sha256()
+    for scope in ("--local", "--global", "--system"):
+        result = subprocess.run(
+            ["git", "config", scope, "--null", "--list"], cwd=root,
+            capture_output=True, check=False,
+        )
+        digest.update(scope.encode("ascii"))
+        digest.update(b"\0")
+        digest.update(str(result.returncode).encode("ascii"))
+        digest.update(b"\0")
+        digest.update(result.stdout)
+        digest.update(b"\0")
+        digest.update(result.stderr)
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def generation_git_status(root: Path) -> str:
+    """Return status under the documented Windows generated-text semantics."""
+    return run([
+        "git", "-c", "core.autocrlf=true", "status", "--porcelain=v1", "-uall",
+    ], cwd=root)
+
+
 def changed_paths(root: Path = ROOT) -> list[str]:
     paths: list[str] = []
     for line in git_status(root).splitlines():
@@ -147,6 +207,45 @@ def changed_paths(root: Path = ROOT) -> list[str]:
             path = path.split(" -> ", 1)[1]
         paths.append(path.replace("\\", "/"))
     return paths
+
+
+def git_head(root: Path = ROOT) -> str:
+    return run(["git", "rev-parse", "HEAD"], cwd=root)
+
+
+def resolve_commit(root: Path, commitish: str) -> str:
+    """Resolve an explicitly selected commit without fetching from a remote."""
+    if not commitish:
+        raise Phase11Error("A commit must be selected explicitly")
+    return run(["git", "rev-parse", "--verify", f"{commitish}^{{commit}}"], cwd=root)
+
+
+def read_overlay_manifest(path: Path) -> frozenset[str]:
+    """Read an explicit one-repository-path-per-line pre-commit overlay."""
+    if not path.is_file():
+        raise Phase11Error(f"Overlay manifest does not exist: {path}")
+    paths: list[str] = []
+    for number, raw_line in enumerate(path.read_text(encoding="utf-8-sig").splitlines(), 1):
+        raw = raw_line.strip()
+        if not raw or raw.startswith("#"):
+            continue
+        candidate = raw.replace("\\", "/")
+        parsed = PurePosixPath(candidate)
+        if (
+            parsed.is_absolute()
+            or re.match(r"^[A-Za-z]:", candidate)
+            or any(part in {"", ".", ".."} for part in parsed.parts)
+            or (parsed.parts and parsed.parts[0].lower() == ".git")
+            or candidate != parsed.as_posix()
+        ):
+            raise Phase11Error(f"Invalid overlay path on line {number}: {raw}")
+        paths.append(candidate)
+    if not paths:
+        raise Phase11Error("Overlay manifest is empty")
+    duplicates = sorted({path for path in paths if paths.count(path) > 1})
+    if duplicates:
+        raise Phase11Error("Overlay manifest contains duplicate paths: " + ", ".join(duplicates))
+    return frozenset(paths)
 
 
 def _version_output(command: list[str]) -> str:
@@ -246,75 +345,10 @@ ARTIFACTS: tuple[tuple[str, str, str, str, str, str], ...] = (
     ("P11A-028", "data/phase8/processed/AMORTIZATION_SENSITIVITY_RESULTS.csv", "integrated amortization sensitivity", "audit remediation", "python -B scripts/phase8.py all", "required"),
     ("P11A-029", "data/phase8/processed/DYNAMIC_TEST_EVIDENCE.csv", "separately identifiable Phase 8 dynamic-test evidence", "audit remediation", "python -B scripts/phase8.py all", "required"),
     ("P11A-030", "data/phase9/processed/DYNAMIC_RECOVERY_TEST_EVIDENCE.csv", "separately identifiable Phase 9 dynamic-test evidence", "audit remediation", "python -B scripts/phase9.py all", "required"),
+    ("P11A-031", "data/phase9/processed/PHASE8_BASELINE_VERIFICATION.csv", "pre-overlay Phase 8 semantic and source-state verification", "audit remediation", "python -B scripts/phase9.py all", "required"),
+    ("P11A-032", "data/phase10/processed/FINAL_WORKBOOK_PHASE8_DYNAMIC_EVIDENCE.csv", "Phase 10 final-workbook Phase 8 integration evidence", "audit remediation", "python -B scripts/phase10.py all", "required"),
+    ("P11A-033", "data/phase10/processed/FINAL_WORKBOOK_PHASE9_DYNAMIC_EVIDENCE.csv", "Phase 10 final-workbook Phase 9 recovery evidence", "audit remediation", "python -B scripts/phase10.py all", "required"),
 )
-
-# Exact bounded inventory permitted by the post-Phase 11 audit-remediation pass.
-# This replaces the former blanket "prior phases unchanged" rule without opening
-# a prefix-based exception for unrelated analytical changes.
-REMEDIATION_ALLOWED_PATHS = frozenset({
-    "README.md",
-    "data/phase10/processed/COMMITTEE_METRICS.csv",
-    "data/phase10/processed/CONDITIONS_AND_MONITORING.csv",
-    "data/phase10/processed/DECISION_REGISTER.csv",
-    "data/phase10/processed/DELIVERABLE_CONSISTENCY_RESULTS.csv",
-    "data/phase10/processed/RISK_MITIGANT_MATRIX.csv",
-    "data/phase10/processed/VALIDATION_RESULTS.csv",
-    "data/phase10/processed/WORKBOOK_INPUTS.json",
-    "data/phase10/raw/OWNER_REVIEW_DECISIONS.csv",
-    "data/phase10/raw/STARTING_CHECKPOINT.csv",
-    "data/phase11/processed/ARTIFACT_MANIFEST.csv",
-    "data/phase11/processed/REPRODUCIBILITY_RESULTS.csv",
-    "data/phase11/processed/VALIDATION_RESULTS.csv",
-    "data/phase11/raw/STARTING_CHECKPOINT.csv",
-    "data/phase8/processed/AMORTIZATION_SENSITIVITY_RESULTS.csv",
-    "data/phase8/processed/DYNAMIC_TEST_EVIDENCE.csv",
-    "data/phase8/processed/OPENING_DEBT_COMPARISON.csv",
-    "data/phase8/processed/SCENARIO_CAPTURE_RESULTS.csv",
-    "data/phase8/processed/TERM_SIZING_SENSITIVITY.csv",
-    "data/phase8/processed/WORKBOOK_MAP.csv",
-    "data/phase8/processed/WORKBOOK_VALIDATION_RESULTS.csv",
-    "data/phase8/raw/STARTING_CHECKPOINT.csv",
-    "data/phase9/processed/DYNAMIC_RECOVERY_TEST_EVIDENCE.csv",
-    "data/phase9/processed/VALIDATION_RESULTS.csv",
-    "data/phase9/raw/STARTING_CHECKPOINT.csv",
-    "docs/phase-10/DECISION_RATIONALE.md",
-    "docs/phase-10/METHODOLOGY.md",
-    "docs/phase-10/PHASE11_HANDOFF.md",
-    "docs/phase-10/SOURCE_LEDGER.csv",
-    "docs/phase-11/LIMITATIONS.md",
-    "docs/phase-11/METHODOLOGY.md",
-    "docs/phase-11/PHASE12_HANDOFF.md",
-    "docs/phase-11/RELEASE_CHECKLIST.md",
-    "docs/phase-11/REPRODUCIBILITY.md",
-    "docs/phase-11/SOURCE_LEDGER.csv",
-    "docs/phase-7/COVENANT_DESIGN.md",
-    "docs/phase-8/CALCULATION_VALIDATION.md",
-    "docs/phase-8/METHODOLOGY.md",
-    "docs/phase-8/SOURCE_LEDGER.csv",
-    "docs/phase-9/METHODOLOGY.md",
-    "model/Quanex_Credit_Underwriting.xlsx",
-    "reports/committee_brief.md",
-    "reports/committee_brief.pdf",
-    "reports/credit_memo.md",
-    "reports/credit_memo.pdf",
-    "scripts/build-phase10.mjs",
-    "scripts/build-phase8.mjs",
-    "scripts/phase10.py",
-    "scripts/phase11.py",
-    "scripts/phase4.py",
-    "scripts/phase5.py",
-    "scripts/phase6.py",
-    "scripts/phase7.py",
-    "scripts/phase8.py",
-    "scripts/phase9.py",
-    "scripts/recalculate-phase8.py",
-    "scripts/render-phase10.py",
-    "tests/test_audit_remediation.py",
-    "tests/test_phase10.py",
-    "tests/test_phase11.py",
-    "tests/test_phase8.py",
-    "tests/test_phase9.py",
-})
 
 PHASE3_PRESERVED_PATHS = (
     "data/phase3/processed/ASSUMPTION_CANDIDATES.csv",
@@ -326,6 +360,16 @@ PHASE3_PRESERVED_PATHS = (
     "docs/phase-3/SOURCE_LEDGER.csv",
 )
 REPRESENTATIVE_LF_CSV = PHASE3_PRESERVED_PATHS[0]
+
+# Phase 0 is validated, not regenerated, by BUILD_SEQUENCE.  These two
+# documents are also raw-byte Phase 10 provenance inputs, so converting them
+# to a platform checkout profile would change only the downstream source
+# signature and ledger rather than reproducing a generated artifact.
+PHASE0_STATIC_SOURCE_TEXT_PATHS = frozenset({
+    "docs/phase-0/CASE_CHARTER.md",
+    "docs/phase-0/EXISTING_FINANCING.md",
+})
+WINDOWS_GENERATED_TEXT_SUFFIXES = frozenset({".md", ".json"})
 
 
 def artifact_rows(reproduced: bool) -> list[dict[str, str | int]]:
@@ -369,11 +413,35 @@ def source_ledger_rows() -> list[dict[str, str]]:
         ("data/phase8/processed/AMORTIZATION_SENSITIVITY_RESULTS.csv", "audit-remediated analytical control", "approved_calculation", INFORMATION_CUTOFF, "within_cutoff"),
         ("data/phase8/processed/DYNAMIC_TEST_EVIDENCE.csv", "technical validation evidence", "repository_control", "not_analytical", "not_applicable"),
         ("data/phase9/processed/DYNAMIC_RECOVERY_TEST_EVIDENCE.csv", "technical validation evidence", "repository_control", "not_analytical", "not_applicable"),
+        ("data/phase9/processed/PHASE8_BASELINE_VERIFICATION.csv", "technical workbook-lineage evidence", "repository_control", "not_analytical", "not_applicable"),
+        ("data/phase10/processed/FINAL_WORKBOOK_PHASE8_DYNAMIC_EVIDENCE.csv", "final-workbook technical validation evidence", "repository_control", "not_analytical", "not_applicable"),
+        ("data/phase10/processed/FINAL_WORKBOOK_PHASE9_DYNAMIC_EVIDENCE.csv", "final-workbook technical validation evidence", "repository_control", "not_analytical", "not_applicable"),
         ("model/Quanex_Credit_Underwriting.xlsx", "approved Phase 10 artifact", "approved_output", INFORMATION_CUTOFF, "within_cutoff"),
         ("reports/credit_memo.pdf", "approved Phase 10 artifact", "approved_output", INFORMATION_CUTOFF, "within_cutoff"),
         ("reports/committee_brief.pdf", "approved Phase 10 artifact", "approved_output", INFORMATION_CUTOFF, "within_cutoff"),
         ("README.md", "release-control input", "repository_control", "not_analytical", "not_applicable"),
+        ("scripts/phase2.py", "historical-interest evidence correction", "repository_control", "not_analytical", "not_applicable"),
+        ("tests/test_phase2.py", "historical-interest regression input", "repository_control", "not_analytical", "not_applicable"),
+        ("scripts/remediation_controls.py", "byte-exact prior-phase remediation authorization", "repository_control", "not_analytical", "not_applicable"),
+        ("scripts/phase6.py", "paid-versus-payable coverage correction", "repository_control", "not_analytical", "not_applicable"),
+        ("tests/test_phase6.py", "paid-versus-payable regression input", "repository_control", "not_analytical", "not_applicable"),
+        ("scripts/phase7.py", "covenant and warning-boundary correction", "repository_control", "not_analytical", "not_applicable"),
+        ("tests/test_phase7.py", "covenant regression input", "repository_control", "not_analytical", "not_applicable"),
+        ("scripts/phase8.py", "workbook evidence and release-control implementation", "repository_control", "not_analytical", "not_applicable"),
+        ("scripts/build-phase8.mjs", "workbook integration implementation", "repository_control", "not_analytical", "not_applicable"),
+        ("scripts/recalculate-phase8.py", "LibreOffice live-input probe implementation", "repository_control", "not_analytical", "not_applicable"),
+        ("scripts/validate-phase8-excel.ps1", "Excel live-input probe implementation", "repository_control", "not_analytical", "not_applicable"),
+        ("tests/test_phase8.py", "workbook integration regression input", "repository_control", "not_analytical", "not_applicable"),
+        ("scripts/phase9.py", "recovery evidence and workbook-lineage implementation", "repository_control", "not_analytical", "not_applicable"),
+        ("scripts/validate-phase9-excel.ps1", "Excel recovery interaction probe implementation", "repository_control", "not_analytical", "not_applicable"),
+        ("tests/test_phase9.py", "recovery and lineage regression input", "repository_control", "not_analytical", "not_applicable"),
+        ("scripts/workbook_semantics.py", "semantic workbook comparison implementation", "repository_control", "not_analytical", "not_applicable"),
+        ("tests/test_workbook_semantics.py", "semantic workbook comparison regression input", "repository_control", "not_analytical", "not_applicable"),
+        ("scripts/xlsx_package.py", "deterministic XLSX package canonicalization", "repository_control", "not_analytical", "not_applicable"),
+        ("tests/test_xlsx_package.py", "deterministic XLSX package regression input", "repository_control", "not_analytical", "not_applicable"),
         ("scripts/phase10.py", "release-control input", "repository_control", "not_analytical", "not_applicable"),
+        ("scripts/build-phase10.mjs", "final-workbook overlay implementation", "repository_control", "not_analytical", "not_applicable"),
+        ("scripts/render-phase10.py", "final-document renderer", "repository_control", "not_analytical", "not_applicable"),
         ("tests/test_phase10.py", "release-control regression input", "repository_control", "not_analytical", "not_applicable"),
         ("scripts/phase11.py", "release-control implementation", "repository_control", "not_analytical", "not_applicable"),
         ("tests/test_phase11.py", "release-control regression input", "repository_control", "not_analytical", "not_applicable"),
@@ -394,13 +462,13 @@ def source_ledger_rows() -> list[dict[str, str]]:
 
 
 def deterministic_prior_paths(root: Path) -> list[str]:
-    exact_suffixes = {".csv", ".json", ".md", ".png", ".pdf"}
+    exact_suffixes = {".csv", ".json", ".md", ".png", ".pdf", ".xlsx"}
     selected = []
     for relative in repository_paths(root):
         path = Path(relative)
         if path.suffix.lower() not in exact_suffixes:
             continue
-        if relative == "README.md" or relative.startswith("reports/"):
+        if relative in {"README.md", "model/Quanex_Credit_Underwriting.xlsx"} or relative.startswith("reports/"):
             selected.append(relative)
         elif relative.startswith("data/phase") and not relative.startswith("data/phase11"):
             selected.append(relative)
@@ -424,39 +492,66 @@ BUILD_SEQUENCE = (
     ("phase10_validate", [sys.executable, "-B", "scripts/phase10.py", "validate"]),
 )
 
+# These files are written by the named build steps and are part of a fresh
+# reproduction claim.  Compare them immediately after their owning step so a
+# later build cannot overwrite a discrepancy and no restoration can hide it.
+FRESH_VALIDATION_BY_STEP: dict[str, tuple[str, ...]] = {
+    "phase8": ("data/phase8/processed/WORKBOOK_VALIDATION_RESULTS.csv",),
+    "phase9": ("data/phase9/processed/VALIDATION_RESULTS.csv",),
+    "phase10_build": (
+        "data/phase10/processed/VALIDATION_RESULTS.csv",
+        "data/phase10/processed/FINAL_WORKBOOK_PHASE8_DYNAMIC_EVIDENCE.csv",
+        "data/phase10/processed/FINAL_WORKBOOK_PHASE9_DYNAMIC_EVIDENCE.csv",
+    ),
+    "phase10_validate": ("data/phase10/processed/VALIDATION_RESULTS.csv",),
+}
+
+
+def require_fresh_validation_outputs(
+    root: Path,
+    baseline: dict[str, str],
+    step: str,
+    paths: tuple[str, ...],
+) -> list[dict[str, str]]:
+    """Fail on a fresh validation difference before any later step can mask it."""
+    records: list[dict[str, str]] = []
+    for relative in paths:
+        path = root / relative
+        if relative not in baseline or not path.is_file():
+            raise Phase11Error(
+                f"Fresh validation output is unavailable: step={step}; path={relative}"
+            )
+        expected = baseline[relative]
+        observed = sha256(path)
+        records.append({
+            "step": step,
+            "path": relative,
+            "expected_sha256": expected,
+            "observed_sha256": observed,
+            "status": "PASS" if observed == expected else "FAIL",
+        })
+        if observed != expected:
+            raise Phase11Error(
+                "Fresh validation output differs before any restoration or later overwrite: "
+                f"step={step}; path={relative}; expected_sha256={expected}; "
+                f"observed_sha256={observed}"
+            )
+    return records
+
 
 def reproduction_in_current_clone() -> dict[str, object]:
     """Regenerate Phase 0-10 in the current disposable clone and compare outputs."""
     baseline_paths = deterministic_prior_paths(ROOT)
     before = {relative: sha256(ROOT / relative) for relative in baseline_paths}
-    model_before_bytes = MODEL.read_bytes()
     wb_before = phase10.workbook_metadata()
-    preserved_validation = {
-        relative: (ROOT / relative).read_bytes()
-        for relative in (
-            "data/phase8/processed/WORKBOOK_VALIDATION_RESULTS.csv",
-            "data/phase9/processed/VALIDATION_RESULTS.csv",
-            "data/phase10/processed/VALIDATION_RESULTS.csv",
-        )
-    }
     steps: dict[str, str] = {}
+    fresh_validation: list[dict[str, str]] = []
     for label, command in BUILD_SEQUENCE:
-        if label == "phase10_build":
-            # Phase 8/9 legacy validators persist engine reports.  Their checks
-            # have run; restore the approved records before the Phase 10 scope
-            # control, matching the established Phase 10 isolated verifier.
-            for relative in (
-                "data/phase8/processed/WORKBOOK_VALIDATION_RESULTS.csv",
-                "data/phase9/processed/VALIDATION_RESULTS.csv",
-            ):
-                (ROOT / relative).write_bytes(preserved_validation[relative])
         output = run(command)
         steps[label] = output.splitlines()[-1] if output else "PASS"
-    # Validation maintenance may add controls without changing the approved
-    # Phase 10 analytical artifact.  The release comparison retains the
-    # owner-approved validation snapshots after executing the live controls.
-    for relative, content in preserved_validation.items():
-        (ROOT / relative).write_bytes(content)
+        fresh_validation.extend(require_fresh_validation_outputs(
+            ROOT, before, label, FRESH_VALIDATION_BY_STEP.get(label, ()),
+        ))
     after = {relative: sha256(ROOT / relative) for relative in baseline_paths}
     differences = [relative for relative in baseline_paths if before[relative] != after[relative]]
     if differences:
@@ -471,10 +566,6 @@ def reproduction_in_current_clone() -> dict[str, object]:
         raise Phase11Error("Workbook semantic reproducibility failed: " + ", ".join(semantic_failures))
     if wb_after["normalized_fingerprint"] != APPROVED_WORKBOOK_FINGERPRINT:
         raise Phase11Error("Workbook normalized fingerprint differs from approved Phase 10")
-    # Raw XLSX metadata is allowed to vary after engine recalculation, but the
-    # clean clone must finish with the approved artifact while retaining the
-    # observed semantic comparison result.
-    MODEL.write_bytes(model_before_bytes)
     return {
         "status": "PASS", "network_analytical_requests": 0,
         "exact_paths_compared": len(baseline_paths), "exact_differences": 0,
@@ -482,7 +573,11 @@ def reproduction_in_current_clone() -> dict[str, object]:
         "workbook_raw_equal": wb_before["sha256"] == wb_after["sha256"],
         "workbook_normalized_before": wb_before["normalized_fingerprint"],
         "workbook_normalized_after": wb_after["normalized_fingerprint"],
-        "workbook_semantic_differences": 0, "steps": steps,
+        "workbook_semantic_differences": 0,
+        "fresh_validation_outputs_compared": len(fresh_validation),
+        "fresh_validation_outputs": fresh_validation,
+        "validation_snapshots_restored": 0,
+        "steps": steps,
     }
 
 
@@ -499,16 +594,73 @@ def exact_path_differences(baseline: dict[str, str], root: Path) -> list[str]:
     ]
 
 
-def require_exact_remediation_inventory(root: Path, paths: frozenset[str]) -> None:
-    """Reject missing or extra overlays rather than deriving exceptions from status."""
+def require_exact_overlay_inventory(root: Path, paths: frozenset[str]) -> None:
+    """Reject missing or extra paths against the caller-declared overlay."""
     actual = frozenset(changed_paths(root))
     if actual != paths:
         missing = sorted(paths - actual)
         unexpected = sorted(actual - paths)
         raise Phase11Error(
-            "Disposable overlay inventory differs from the authoritative inventory; "
+            "Disposable overlay inventory differs from the explicitly declared inventory; "
             f"missing={missing}; unexpected={unexpected}"
         )
+
+
+def validate_isolation_request(
+    root: Path,
+    *,
+    mode: str,
+    selected_commit: str,
+    overlay_paths: frozenset[str],
+) -> str:
+    """Validate release or overlay preconditions and return the resolved commit."""
+    if mode not in {RELEASE_MODE, OVERLAY_MODE}:
+        raise Phase11Error(f"Unsupported verification mode: {mode}")
+    resolved = resolve_commit(root, selected_commit)
+    source_head = git_head(root)
+    if resolved != source_head:
+        raise Phase11Error(
+            f"Selected commit is not the source checkout HEAD: selected={resolved}; HEAD={source_head}"
+        )
+    actual = frozenset(changed_paths(root))
+    if mode == RELEASE_MODE:
+        if overlay_paths:
+            raise Phase11Error("Clean-release verification does not permit an overlay")
+        if actual:
+            raise Phase11Error(
+                "Clean-release verification requires a pristine source checkout; changed="
+                + ", ".join(sorted(actual))
+            )
+    else:
+        if not overlay_paths:
+            raise Phase11Error("Pre-commit overlay review requires an explicit non-empty overlay")
+        require_exact_overlay_inventory(root, overlay_paths)
+    return resolved
+
+
+def phase11_build_change_inventory(
+    declared_overlay: frozenset[str],
+) -> frozenset[str]:
+    """Return the current build inventory without widening the caller's scope.
+
+    ``all`` may make only its fixed, deterministic Phase 11 output paths newly
+    dirty.  Every other changed path must remain exactly the caller-declared
+    pre-generation overlay.  ``verify-overlay`` does not use this allowance;
+    it continues to require a refreshed manifest that exactly matches status.
+    """
+
+    actual = frozenset(changed_paths())
+    unexpected = actual - declared_overlay - PHASE11_GENERATED_OUTPUT_PATHS
+    missing_declared = (
+        declared_overlay - PHASE11_GENERATED_OUTPUT_PATHS - actual
+    )
+    if unexpected or missing_declared:
+        raise Phase11Error(
+            "Phase 11 generation changed paths outside its fixed output inventory; "
+            f"missing_declared={sorted(missing_declared)}; "
+            f"unexpected={sorted(unexpected)}"
+        )
+    return actual
 
 
 def _copy_current_tree_to_clone(
@@ -518,11 +670,21 @@ def _copy_current_tree_to_clone(
     overlay_paths: frozenset[str],
 ) -> None:
     """Copy the fixed approved overlay byte-for-byte into the disposable clone."""
+    source_root_resolved = source_root.resolve()
+    destination_resolved = destination.resolve()
     for relative in sorted(overlay_paths):
         source = source_root / relative
-        if not source.is_file():
+        resolved_source = source.resolve()
+        if (
+            source.is_symlink()
+            or not source.is_file()
+            or source_root_resolved not in resolved_source.parents
+        ):
             raise Phase11Error(f"Approved overlay path is not a file: {relative}")
         target = destination / relative
+        resolved_target = target.resolve()
+        if destination_resolved not in resolved_target.parents:
+            raise Phase11Error(f"Unsafe disposable overlay target: {relative}")
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
         if source.read_bytes() != target.read_bytes():
@@ -546,80 +708,88 @@ def _verify_canonical_checkout(destination: Path) -> dict[str, str]:
     return hashes
 
 
-def _materialize_approved_checkout_eols(
+def _is_windows_generated_text_path(relative: str) -> bool:
+    """Return whether a Phase 0-10 generator rewrites this Markdown/JSON path."""
+
+    if relative in PHASE0_STATIC_SOURCE_TEXT_PATHS:
+        return False
+    suffix = PurePosixPath(relative).suffix.lower()
+    if suffix not in WINDOWS_GENERATED_TEXT_SUFFIXES:
+        return False
+    if relative == "README.md" or relative.startswith("reports/"):
+        return True
+    match = re.match(r"^(?:data/phase|docs/phase-)(\d+)(?:/|$)", relative)
+    return bool(match and int(match.group(1)) <= 10)
+
+
+def _materialize_windows_generation_eols(
     destination: Path,
     *,
-    source_root: Path,
     overlay_paths: frozenset[str],
 ) -> list[str]:
-    """Match approved checkout EOLs using Git content, never a broad copy.
+    """Create the documented Windows generated-text checkout from Git only.
 
-    An unmodified tracked file may differ from its canonical blob only by the
-    exact LF-to-CRLF transform. Those files are rematerialized from Git with a
-    command-local setting. Any other difference outside the fixed overlay is a
-    failure. This is checkout preparation; later comparisons remain raw-byte
-    exact and no path becomes an analytical exception.
+    Regenerating Phase 0-10 Python outputs writes their Markdown and JSON with
+    Windows newlines, while CSV writers explicitly use LF.  Start from
+    canonical blobs, then ask Git to materialize only text paths actually
+    rewritten by the build with command-scoped ``core.autocrlf=true``.  Static
+    Phase 0 evidence hashed by Phase 10 and maintained Phase 11 sources remain
+    byte-identical to their Git blobs.  No bytes or path choices come from the
+    live source checkout, and comparisons remain byte-exact.
     """
     tracked_result = subprocess.run(
         ["git", "ls-files", "-z"], cwd=destination,
         capture_output=True, check=True,
     )
-    tracked = sorted(
-        item.decode("utf-8") for item in tracked_result.stdout.split(b"\0") if item
+    paths = sorted(
+        relative for item in tracked_result.stdout.split(b"\0") if item
+        for relative in [item.decode("utf-8")]
+        if relative not in overlay_paths
+        and _is_windows_generated_text_path(relative)
     )
-    windows_paths: list[str] = []
-    for relative in tracked:
-        if relative in overlay_paths:
-            continue
-        source = source_root / relative
-        target = destination / relative
-        if not source.is_file() or not target.is_file():
-            raise Phase11Error(f"Missing tracked checkout path: {relative}")
-        canonical = target.read_bytes()
-        approved = source.read_bytes()
-        if approved == canonical:
-            continue
-        if b"\r\n" not in canonical and approved == canonical.replace(b"\n", b"\r\n"):
-            windows_paths.append(relative)
-            continue
-        raise Phase11Error(f"Unapproved non-EOL checkout difference: {relative}")
-    if windows_paths:
-        for relative in windows_paths:
-            target = (destination / relative).resolve()
-            if destination.resolve() not in target.parents:
-                raise Phase11Error(f"Unsafe disposable text path: {relative}")
-            target.unlink()
+    canonical = {relative: (destination / relative).read_bytes() for relative in paths}
+    for relative, content in canonical.items():
+        if b"\r\n" in content:
+            raise Phase11Error(f"Canonical Git blob unexpectedly contains CRLF: {relative}")
+        target = (destination / relative).resolve()
+        if destination.resolve() not in target.parents:
+            raise Phase11Error(f"Unsafe disposable generated-text path: {relative}")
+        target.unlink()
+    if paths:
         run([
             "git", "-c", "core.autocrlf=true", "checkout", "--force", "HEAD", "--",
-            *windows_paths,
+            *paths,
         ], cwd=destination)
-        mismatches = [
-            relative for relative in windows_paths
-            if (destination / relative).read_bytes() != (source_root / relative).read_bytes()
-        ]
-        if mismatches:
-            raise Phase11Error("Command-local EOL materialization mismatch: " + ", ".join(mismatches))
-    return windows_paths
+    mismatches = [
+        relative for relative in paths
+        if (destination / relative).read_bytes()
+        != canonical[relative].replace(b"\n", b"\r\n")
+    ]
+    if mismatches:
+        raise Phase11Error(
+            "Git Windows generated-text materialization mismatch: " + ", ".join(mismatches)
+        )
+    return paths
 
 
 def isolated_clone(
     *,
+    mode: str,
+    selected_commit: str,
+    overlay_paths: frozenset[str],
     source_root: Path = ROOT,
-    expected_head: str = APPROVED_PHASE10_COMMIT,
-    overlay_paths: frozenset[str] = REMEDIATION_ALLOWED_PATHS,
-    require_authoritative_inventory: bool = True,
-    require_staged_overlay_exact: bool = True,
 ) -> tuple[tempfile.TemporaryDirectory[str], Path]:
-    """Create a canonical-LF, independent clone and apply only a fixed overlay."""
-    if require_authoritative_inventory:
-        if overlay_paths != REMEDIATION_ALLOWED_PATHS:
-            raise Phase11Error("Production clone overlay is not the authoritative 62-path inventory")
-        require_exact_remediation_inventory(source_root, REMEDIATION_ALLOWED_PATHS)
+    """Create an independent selected-commit clone for release or overlay review."""
+    resolved_commit = validate_isolation_request(
+        source_root, mode=mode, selected_commit=selected_commit,
+        overlay_paths=overlay_paths,
+    )
     holder = tempfile.TemporaryDirectory(prefix="quanex-phase11-verify-")
     destination = Path(holder.name) / "repo"
     try:
         run([
-            "git", "clone", "--no-hardlinks", "--quiet", "--config", "core.autocrlf=false",
+            "git", "clone", "--no-hardlinks", "--quiet", "--no-checkout",
+            "--config", "core.autocrlf=false",
             str(source_root), str(destination),
         ], cwd=source_root, extra_env=GIT_CANONICAL_TEXT_ENV)
         if not (destination / ".git").is_dir() or (destination / ".git").resolve() == (source_root / ".git").resolve():
@@ -627,15 +797,20 @@ def isolated_clone(
         local_autocrlf = run(["git", "config", "--local", "--get", "core.autocrlf"], cwd=destination)
         if local_autocrlf.lower() != "false":
             raise Phase11Error(f"Disposable clone core.autocrlf is not false: {local_autocrlf}")
+        # Materialize the selected commit as the disposable clone's local
+        # ``main`` branch.  Earlier phase builders intentionally require
+        # ``main``; resetting only this throw-away local branch preserves that
+        # governance check while still proving the exact selected commit.
+        run(["git", "checkout", "--quiet", "-B", "main", resolved_commit], cwd=destination, extra_env=GIT_CANONICAL_TEXT_ENV)
         head = run(["git", "rev-parse", "HEAD"], cwd=destination)
-        if head != expected_head:
+        if head != resolved_commit:
             raise Phase11Error(f"Disposable clone began at unexpected commit: {head}")
         _verify_canonical_checkout(destination)
-        _materialize_approved_checkout_eols(
-            destination, source_root=source_root, overlay_paths=overlay_paths,
+        _materialize_windows_generation_eols(
+            destination, overlay_paths=overlay_paths,
         )
         if run(["git", "config", "--local", "--get", "core.autocrlf"], cwd=destination).lower() != "false":
-            raise Phase11Error("Command-local text materialization changed clone-local core.autocrlf")
+            raise Phase11Error("Disposable checkout changed clone-local core.autocrlf")
         _verify_canonical_checkout(destination)
         if os.path.samefile(source_root / REPRESENTATIVE_LF_CSV, destination / REPRESENTATIVE_LF_CSV):
             raise Phase11Error("Disposable clone uses a hardlink for the representative Phase 3 file")
@@ -649,10 +824,10 @@ def isolated_clone(
             staged = frozenset(
                 run(["git", "-c", "core.autocrlf=true", "diff", "--cached", "--name-only"], cwd=destination).splitlines()
             )
-            if require_staged_overlay_exact and staged != overlay_paths:
-                raise Phase11Error("Disposable clone staged overlay differs from the fixed approved inventory")
-            if not require_staged_overlay_exact and not staged.issubset(overlay_paths):
-                raise Phase11Error("Disposable clone staged a path outside its fixed overlay")
+            if staged != overlay_paths:
+                raise Phase11Error(
+                    "Disposable clone staged overlay differs from the explicitly declared inventory"
+                )
             if staged:
                 run(["git", "-c", "core.autocrlf=true", "commit", "--quiet", "-m", "temporary Phase 11 verification overlay"], cwd=destination)
         if run(["git", "-c", "core.autocrlf=true", "status", "--porcelain=v1", "-uall"], cwd=destination):
@@ -663,8 +838,16 @@ def isolated_clone(
     return holder, destination
 
 
-def run_clean_clone() -> dict[str, object]:
-    holder, destination = isolated_clone()
+def run_isolated_reproduction(
+    *,
+    mode: str,
+    selected_commit: str,
+    overlay_paths: frozenset[str],
+) -> dict[str, object]:
+    resolved_commit = resolve_commit(ROOT, selected_commit)
+    holder, destination = isolated_clone(
+        mode=mode, selected_commit=resolved_commit, overlay_paths=overlay_paths,
+    )
     try:
         clone_autocrlf = run(["git", "config", "--local", "--get", "core.autocrlf"], cwd=destination)
         phase3_before = exact_path_hashes(destination, list(PHASE3_PRESERVED_PATHS))
@@ -685,20 +868,31 @@ def run_clean_clone() -> dict[str, object]:
     result["clone_local_autocrlf"] = clone_autocrlf
     result["canonical_phase3_paths"] = len(phase3_before)
     result["phase3_paths_unchanged"] = phase3_before == phase3_after
-    result["overlay_paths"] = len(REMEDIATION_ALLOWED_PATHS)
+    result["verification_mode"] = mode
+    result["selected_commit"] = resolved_commit
+    result["overlay_paths"] = len(overlay_paths)
     result["independent_git_metadata"] = independent_metadata
     result["no_hardlinks"] = no_hardlinks
     return result
 
 
 def reproduction_rows(result: dict[str, object]) -> list[dict[str, str]]:
+    mode = str(result["verification_mode"])
+    overlay_count = int(result["overlay_paths"])
+    expected_overlay_count = 0 if mode == RELEASE_MODE else overlay_count
+    expected_fresh_comparisons = sum(
+        len(paths) for paths in FRESH_VALIDATION_BY_STEP.values()
+    )
     pairs = [
-        ("local clone began at approved Phase 10", "PASS", APPROVED_PHASE10_COMMIT, APPROVED_PHASE10_COMMIT),
+        ("verification mode explicit", "PASS" if mode in {RELEASE_MODE, OVERLAY_MODE} else "FAIL", mode, f"{RELEASE_MODE} or {OVERLAY_MODE}"),
+        ("selected commit resolved exactly", "PASS", str(result["selected_commit"]), str(result["selected_commit"])),
         ("disposable clone has independent Git metadata", "PASS" if result["independent_git_metadata"] else "FAIL", str(result["independent_git_metadata"]), "True"),
         ("disposable clone uses no hardlinks", "PASS" if result["no_hardlinks"] else "FAIL", str(result["no_hardlinks"]), "True"),
         ("core.autocrlf false before initial checkout", "PASS" if result["clone_local_autocrlf"] == "false" else "FAIL", str(result["clone_local_autocrlf"]), "false"),
         ("canonical Phase 3 bytes preserved", "PASS" if result["phase3_paths_unchanged"] else "FAIL", str(result["canonical_phase3_paths"]), "7 exact paths unchanged"),
-        ("fixed remediation overlay", "PASS" if result["overlay_paths"] == 62 else "FAIL", str(result["overlay_paths"]), "62 explicit paths"),
+        ("overlay inventory matches verification mode", "PASS" if overlay_count == expected_overlay_count else "FAIL", str(overlay_count), str(expected_overlay_count)),
+        ("fresh validation outputs compared before later overwrite", "PASS" if result["fresh_validation_outputs_compared"] == expected_fresh_comparisons else "FAIL", str(result["fresh_validation_outputs_compared"]), f"{expected_fresh_comparisons} step-specific comparisons"),
+        ("validation snapshots restored", "PASS" if result["validation_snapshots_restored"] == 0 else "FAIL", str(result["validation_snapshots_restored"]), "0"),
         ("analytical reproduction required no network", "PASS" if result["network_analytical_requests"] == 0 else "FAIL", str(result["network_analytical_requests"]), "0"),
         ("deterministic artifacts exact", "PASS" if result["exact_differences"] == 0 else "FAIL", str(result["exact_differences"]), "0"),
         ("workbook normalized fingerprint", "PASS" if result["workbook_normalized_after"] == APPROVED_WORKBOOK_FINGERPRINT else "FAIL", str(result["workbook_normalized_after"]), APPROVED_WORKBOOK_FINGERPRINT),
@@ -707,25 +901,49 @@ def reproduction_rows(result: dict[str, object]) -> list[dict[str, str]]:
     ]
     return [
         {"reproducibility_id": f"P11R-{index:03d}", "test_name": name, "status": status,
-         "observed": observed, "expected": expected, "notes": "No new analytical evidence was retrieved."}
+         "observed": observed, "expected": expected, "verification_mode": mode,
+         "notes": "No new analytical evidence; pre-commit overlay review is not clean-release verification." if mode == OVERLAY_MODE else "No new analytical evidence; clean selected-commit verification used zero overlays."}
         for index, (name, status, observed, expected) in enumerate(pairs, 1)
     ]
 
 
-def build_outputs() -> dict[str, object]:
+def build_outputs(*, base_commit: str, overlay_paths: frozenset[str]) -> dict[str, object]:
+    # Establish the caller's exact authority before producing any output.  The
+    # isolated clone repeats this check, so a concurrent source-tree change is
+    # rejected rather than silently joining the overlay.
+    validate_isolation_request(
+        ROOT, mode=OVERLAY_MODE, selected_commit=base_commit,
+        overlay_paths=overlay_paths,
+    )
     protected = {
         relative: sha256(ROOT / relative)
         for relative in repository_paths()
-        if not relative.startswith("data/phase11/") and not relative.startswith("docs/phase-11/")
+        if relative not in PHASE11_GENERATED_OUTPUT_PATHS
     }
+    result = run_isolated_reproduction(
+        mode=OVERLAY_MODE, selected_commit=base_commit, overlay_paths=overlay_paths,
+    )
     write_csv(PROCESSED / "DEPENDENCY_INVENTORY.csv", dependency_rows())
     write_csv(PROCESSED / "LINK_CHECK_RESULTS.csv", link_rows())
     write_csv(DOCS / "SOURCE_LEDGER.csv", source_ledger_rows())
     write_csv(PROCESSED / "ARTIFACT_MANIFEST.csv", artifact_rows(False))
-    result = run_clean_clone()
     write_csv(PROCESSED / "REPRODUCIBILITY_RESULTS.csv", reproduction_rows(result))
     write_csv(PROCESSED / "ARTIFACT_MANIFEST.csv", artifact_rows(True))
-    controls = validate(write_output=True)
+
+    # Only the fixed Phase 11 output inventory may be newly dirty.  The first
+    # validation write can add VALIDATION_RESULTS.csv; if it does, immediately
+    # rerun the read/validation pass against that now-complete internal
+    # inventory so the saved scope control describes the final generated tree.
+    effective_overlay = phase11_build_change_inventory(overlay_paths)
+    controls = validate(write_output=True, allowed_changes=effective_overlay)
+    final_overlay = phase11_build_change_inventory(overlay_paths)
+    if final_overlay != effective_overlay:
+        controls = validate(write_output=True, allowed_changes=final_overlay)
+        stable_overlay = phase11_build_change_inventory(overlay_paths)
+        if stable_overlay != final_overlay:
+            raise Phase11Error(
+                "Phase 11 generated-output inventory did not stabilize after validation"
+            )
     after = {relative: sha256(ROOT / relative) for relative in protected}
     differences = [relative for relative in protected if protected[relative] != after.get(relative)]
     if differences:
@@ -734,7 +952,7 @@ def build_outputs() -> dict[str, object]:
         "status": "PASS", "artifact_manifest_records": len(artifact_rows(True)),
         "dependency_records": len(dependency_rows()), "link_records": len(link_rows()),
         "validation_controls": len(controls), "exact_paths_compared": result["exact_paths_compared"],
-        "release_status": RELEASE_STATUS,
+        "release_status": RELEASE_STATUS, "verification_mode": OVERLAY_MODE,
     }
 
 
@@ -745,7 +963,9 @@ def _text_release_paths() -> list[Path]:
     ]
 
 
-def validation_rows() -> list[dict[str, object]]:
+def validation_rows(
+    *, allowed_changes: frozenset[str] | None = None,
+) -> list[dict[str, object]]:
     controls: list[dict[str, object]] = []
     def add(category: str, name: str, passed: bool, observed: object, expected: object) -> None:
         controls.append({
@@ -820,7 +1040,9 @@ def validation_rows() -> list[dict[str, object]]:
     manifest_current = all(sha256(ROOT / r["relative_path"]) == r["sha256"] for r in manifest)
     add("manifest", "artifact hashes current", manifest_current, len(manifest), "all current")
     repro = read_csv(PROCESSED / "REPRODUCIBILITY_RESULTS.csv")
-    add("reproducibility", "clean-clone controls pass", bool(repro) and all(r["status"] == "PASS" for r in repro), len(repro), "all PASS")
+    repro_modes = {r.get("verification_mode", "") for r in repro}
+    add("reproducibility", "isolated reproduction controls pass", bool(repro) and all(r["status"] == "PASS" for r in repro), len(repro), "all PASS")
+    add("reproducibility", "reproduction mode explicitly classified", len(repro_modes) == 1 and repro_modes <= {RELEASE_MODE, OVERLAY_MODE}, ";".join(sorted(repro_modes)), "one explicit verification mode")
     dependencies = read_csv(PROCESSED / "DEPENDENCY_INVENTORY.csv")
     add("dependencies", "actual dependency inventory complete", len(dependencies) == 14, len(dependencies), 14)
     ledger = read_csv(DOCS / "SOURCE_LEDGER.csv")
@@ -853,17 +1075,32 @@ def validation_rows() -> list[dict[str, object]]:
     add("repository", "no credentials", not credentials, ";".join(credentials), "none")
     phase12 = [p for p in repository_paths() if p.startswith(("data/phase12/", "docs/phase-12/")) or p in {"scripts/phase12.py", "tests/test_phase12.py"}]
     add("scope", "Phase 12 absent", not phase12, ";".join(phase12), "none")
-    changed = changed_paths()
-    unexpected = [p for p in changed if p not in REMEDIATION_ALLOWED_PATHS]
-    add("scope", "working changes stay within exact remediation inventory", not unexpected, ";".join(unexpected), "none")
-    add("scope", "no unbounded prior-phase exception", all(p in REMEDIATION_ALLOWED_PATHS for p in changed), len(changed), "all paths explicitly allowed")
+    changed = frozenset(changed_paths())
+    if changed:
+        declared = allowed_changes is not None and changed == allowed_changes
+        missing = sorted((allowed_changes or frozenset()) - changed)
+        unexpected = sorted(changed - (allowed_changes or frozenset()))
+        add(
+            "scope", "dirty-tree changes match explicit overlay manifest", declared,
+            f"missing={missing};unexpected={unexpected}", "exact declared overlay",
+        )
+    else:
+        add(
+            "scope", "clean tree requires no overlay exceptions",
+            allowed_changes in (None, frozenset()), len(changed), "0",
+        )
+    add("scope", "no inferred working-tree exceptions", allowed_changes is not None or not changed, len(changed), "clean tree or explicit overlay")
     staged = subprocess.run(["git", "diff", "--cached", "--name-only"], cwd=ROOT, text=True, capture_output=True, check=True).stdout.strip()
     add("git", "nothing staged", staged == "", staged, "none")
     return controls
 
 
-def validate(*, write_output: bool = False) -> list[dict[str, object]]:
-    controls = validation_rows()
+def validate(
+    *,
+    write_output: bool = False,
+    allowed_changes: frozenset[str] | None = None,
+) -> list[dict[str, object]]:
+    controls = validation_rows(allowed_changes=allowed_changes)
     failures = [row for row in controls if row["status"] != "PASS"]
     if write_output:
         write_csv(PROCESSED / "VALIDATION_RESULTS.csv", controls)
@@ -879,37 +1116,269 @@ def _test_count(output: str) -> int:
     return int(match.group(1))
 
 
+def validate_phase8_excel_report(report: dict[str, object]) -> dict[str, object]:
+    """Require the complete executed Q-009/Q-007/Q-005 Excel probe set."""
+    if report.get("status") != "PASS":
+        raise Phase11Error(f"Phase 8 Excel gate did not pass: {report.get('status')}")
+    if str(report.get("excel_version", "")) != "16.0" or str(report.get("excel_build", "")) != "20326":
+        raise Phase11Error(
+            "Phase 8 Excel gate used an undocumented engine: "
+            f"version={report.get('excel_version')}; build={report.get('excel_build')}"
+        )
+    if int(report.get("formula_count", -1)) != EXPECTED_FORMULA_COUNT:
+        raise Phase11Error(
+            "Phase 8 Excel gate formula count differs from the approved workbook: "
+            f"observed={report.get('formula_count')}; expected={EXPECTED_FORMULA_COUNT}"
+        )
+    probes = report.get("live_input_probes")
+    if not isinstance(probes, list) or not all(isinstance(row, dict) for row in probes):
+        raise Phase11Error("Phase 8 Excel gate did not return structured live-input probes")
+    identities = [str(row.get("case", "")) for row in probes]
+    duplicates = sorted({case for case in identities if identities.count(case) > 1})
+    observed = frozenset(identities)
+    if duplicates or observed != EXCEL_PHASE8_REQUIRED_PROBE_CASES:
+        raise Phase11Error(
+            "Phase 8 Excel probe inventory is incomplete or non-unique: "
+            f"missing={sorted(EXCEL_PHASE8_REQUIRED_PROBE_CASES - observed)}; "
+            f"unexpected={sorted(observed - EXCEL_PHASE8_REQUIRED_PROBE_CASES)}; "
+            f"duplicates={duplicates}"
+        )
+    failed = sorted(
+        str(row.get("case", "")) for row in probes if row.get("status") != "PASS"
+    )
+    if failed:
+        raise Phase11Error("Phase 8 Excel probes did not pass: " + ", ".join(failed))
+    indexed = {str(row["case"]): row for row in probes}
+    freshness = report.get("freshness_checkpoints")
+    if not isinstance(freshness, list) or not all(isinstance(row, dict) for row in freshness):
+        raise Phase11Error("Phase 8 Excel gate did not return structured capture-freshness checkpoints")
+    freshness_index = {str(row.get("checkpoint", "")): row for row in freshness}
+    required_freshness = {
+        "initial_full_calculation",
+        "pre_save_base_reset",
+        "save_reopen_full_calculation",
+    }
+    if set(freshness_index) != required_freshness or len(freshness) != len(required_freshness):
+        raise Phase11Error("Phase 8 Excel capture-freshness checkpoint inventory is incomplete or non-unique")
+    if any(
+        row.get("status") != "PASS"
+        or int(row.get("current_capture_count", -1)) != 9
+        or int(row.get("stale_capture_count", -1)) != 0
+        or row.get("checks_freshness_status") != "PASS"
+        or row.get("checks_stale_status") != "PASS"
+        for row in freshness
+    ):
+        raise Phase11Error("Phase 8 Excel saved capture-freshness control failed")
+    identity_rows = [
+        row for row in probes if "max_identity_difference" in row
+    ]
+    if len(identity_rows) != 8:
+        raise Phase11Error(
+            f"Phase 8 Excel gate returned {len(identity_rows)} financing-identity probes; expected 8"
+        )
+    maximum_identity_difference = max(
+        abs(float(row["max_identity_difference"])) for row in identity_rows
+    )
+    spread = indexed["spread_plus_100bp"]
+    try:
+        anchor_differences = [
+            abs(float(spread["february_cash_identity"])),
+            abs(float(spread["april_cash_identity"])),
+            abs(float(indexed["amortization_10_percent"]["april_cash_identity"])),
+            abs(float(indexed["base"]["q2_cfads_difference"])),
+            abs(float(indexed["fy2026_q2_ebitda_plus_10_percent"]["q2_cfads_difference"])),
+            abs(float(indexed["dso_plus_10_days"]["q2_cfads_difference"])),
+            abs(float(indexed["combined_rate_amortization_ebitda_dso"]["q2_cfads_difference"])),
+        ]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise Phase11Error(f"Phase 8 Excel probe omitted a required reconciliation anchor: {exc}") from exc
+    maximum_reconciliation_difference = max(
+        [maximum_identity_difference, *anchor_differences]
+    )
+    if maximum_reconciliation_difference > 0.000001:
+        raise Phase11Error(
+            "Phase 8 Excel live-input financing identities did not reconcile: "
+            f"maximum={maximum_reconciliation_difference}"
+        )
+    warning_probe = indexed["warning_threshold_equalities"]
+    try:
+        coverage_warning_threshold = float(warning_probe["coverage_threshold"])
+        liquidity_warning_threshold = float(warning_probe["liquidity_threshold"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise Phase11Error(f"Phase 8 Excel warning probe omitted an approved threshold: {exc}") from exc
+    if (
+        indexed["balanced_funding_signature_collision"].get("stale_status") != "STALE"
+        or not abs(coverage_warning_threshold - 3.5) <= 0.000001
+        or not abs(liquidity_warning_threshold - 75.0) <= 0.000001
+        or warning_probe.get("coverage_status") != "WARNING"
+        or warning_probe.get("liquidity_status") != "WARNING"
+        or report.get("final_scenario") != "Base"
+        or int(report.get("recovery_logs", -1)) != 0
+    ):
+        raise Phase11Error("Phase 8 Excel freshness, warning-boundary, saved-state, or recovery-log control failed")
+    return {
+        "status": "PASS",
+        "probe_count": len(probes),
+        "probe_cases": sorted(observed),
+        "maximum_identity_difference": maximum_identity_difference,
+        "maximum_reconciliation_difference": maximum_reconciliation_difference,
+        "final_scenario": report.get("final_scenario"),
+        "freshness_checkpoints": sorted(freshness_index),
+        "recovery_logs": report.get("recovery_logs"),
+        "excel_version": report.get("excel_version"),
+        "excel_build": report.get("excel_build"),
+    }
+
+
+def validate_phase9_excel_report(report: dict[str, object]) -> dict[str, object]:
+    """Require all documented Phase 9 Excel interaction methods and engine."""
+    if report.get("status") != "PASS":
+        raise Phase11Error(f"Phase 9 Excel gate did not pass: {report.get('status')}")
+    if str(report.get("excel_version", "")) != "16.0" or str(report.get("excel_build", "")) != "20326":
+        raise Phase11Error(
+            "Phase 9 Excel gate used an undocumented engine: "
+            f"version={report.get('excel_version')}; build={report.get('excel_build')}"
+        )
+    methods = report.get("calculation_methods")
+    if not isinstance(methods, list) or not all(isinstance(row, dict) for row in methods):
+        raise Phase11Error("Phase 9 Excel gate did not return structured calculation methods")
+    identities = [str(row.get("method", "")) for row in methods]
+    duplicates = sorted({method for method in identities if identities.count(method) > 1})
+    observed = frozenset(identities)
+    failed = sorted(str(row.get("method", "")) for row in methods if row.get("status") != "PASS")
+    if duplicates or observed != EXCEL_PHASE9_REQUIRED_METHODS or failed:
+        raise Phase11Error(
+            "Phase 9 Excel method inventory is incomplete, non-unique, or failed: "
+            f"missing={sorted(EXCEL_PHASE9_REQUIRED_METHODS - observed)}; "
+            f"unexpected={sorted(observed - EXCEL_PHASE9_REQUIRED_METHODS)}; "
+            f"duplicates={duplicates}; failed={failed}"
+        )
+    if (
+        report.get("final_scenario") != "Base"
+        or int(report.get("workbook_error_cells", -1)) != 0
+        or int(report.get("recovery_logs", -1)) != 0
+    ):
+        raise Phase11Error("Phase 9 Excel saved-state, workbook-error, or recovery-log control failed")
+    return {
+        "status": "PASS", "method_count": len(methods),
+        "methods": sorted(observed), "excel_version": report.get("excel_version"),
+        "excel_build": report.get("excel_build"),
+    }
+
+
 def engine_gates() -> dict[str, object]:
     before = sha256(MODEL)
-    lo = phase10.libreoffice_report_on_copy("inspect")
-    excel8 = json.loads(phase10.excel_validation_on_copy("validate-phase8-excel.ps1"))
-    excel9 = json.loads(phase10.excel_validation_on_copy("validate-phase9-excel.ps1"))
-    with tempfile.TemporaryDirectory(prefix="quanex-phase11-pdf-render-") as temp_name:
-        pdf_render = json.loads(run([
-            str(phase10.BUNDLED_PYTHON), str(ROOT / "scripts" / "render-phase11.py"),
-            str(ROOT), temp_name,
-        ]).splitlines()[-1])
-    after = sha256(MODEL)
-    if before != after:
-        raise Phase11Error("Spreadsheet-engine gates modified authoritative workbook")
+    before_status = git_status()
+    before_head = git_head()
+    before_git_config = git_config_digest()
+    try:
+        lo = phase10.libreoffice_report_on_copy("inspect")
+        if lo.get("engine") != "LibreOffice 26.8.0.3":
+            raise Phase11Error(f"LibreOffice gate used an undocumented engine: {lo.get('engine')}")
+        excel8_report = json.loads(phase10.excel_validation_on_copy("validate-phase8-excel.ps1"))
+        excel8 = validate_phase8_excel_report(excel8_report)
+        excel9_report = json.loads(phase10.excel_validation_on_copy("validate-phase9-excel.ps1"))
+        excel9 = validate_phase9_excel_report(excel9_report)
+        with tempfile.TemporaryDirectory(prefix="quanex-phase11-pdf-render-") as temp_name:
+            pdf_render = json.loads(run([
+                str(phase10.BUNDLED_PYTHON), str(ROOT / "scripts" / "render-phase11.py"),
+                str(ROOT), temp_name,
+            ]).splitlines()[-1])
+    finally:
+        after = sha256(MODEL)
+        after_status = git_status()
+        after_head = git_head()
+        after_git_config = git_config_digest()
+        if before != after:
+            raise Phase11Error("Spreadsheet-engine gates modified authoritative workbook")
+        if before_status != after_status:
+            raise Phase11Error("Spreadsheet-engine gates changed repository status")
+        if before_head != after_head:
+            raise Phase11Error("Spreadsheet-engine gates changed repository HEAD")
+        if before_git_config != after_git_config:
+            raise Phase11Error("Spreadsheet-engine gates changed Git configuration")
     return {
         "libreoffice": lo.get("engine"), "excel_phase8": excel8.get("status"),
-        "excel_phase9": excel9.get("status"), "authoritative_workbook_unchanged": True,
+        "excel_phase8_probe_count": excel8["probe_count"],
+        "excel_phase8_probe_cases": excel8["probe_cases"],
+        "excel_phase8_maximum_identity_difference": excel8["maximum_identity_difference"],
+        "excel_phase8_maximum_reconciliation_difference": excel8["maximum_reconciliation_difference"],
+        "excel_phase8_version": f"{excel8['excel_version']} build {excel8['excel_build']}",
+        "excel_phase9": excel9.get("status"),
+        "excel_phase9_method_count": excel9["method_count"],
+        "excel_phase9_methods": excel9["methods"],
+        "excel_phase9_version": f"{excel9['excel_version']} build {excel9['excel_build']}",
+        "authoritative_workbook_unchanged": True,
+        "repository_status_unchanged": True,
+        "repository_head_unchanged": True,
+        "git_config_unchanged": True,
         "pdfs": phase10.pdf_metadata(), "pdf_render": pdf_render,
     }
 
 
-def verify_isolated() -> dict[str, object]:
+def validate_verification_clone_start(
+    destination: Path,
+    *,
+    mode: str,
+    resolved_commit: str,
+    clone_head: str,
+    clone_status: str,
+) -> str:
+    """Validate the clean exact-candidate or explicit overlay-review commit."""
+    if clone_status:
+        raise Phase11Error(
+            "Disposable verification checkout did not begin clean: "
+            f"HEAD={clone_head}; status={clone_status!r}"
+        )
+    if mode == RELEASE_MODE:
+        if clone_head != resolved_commit:
+            raise Phase11Error(
+                "Disposable exact-candidate checkout did not begin at the selected commit: "
+                f"HEAD={clone_head}; selected={resolved_commit}"
+            )
+        return resolved_commit
+    if mode == OVERLAY_MODE:
+        clone_base = resolve_commit(destination, f"{clone_head}^")
+        if clone_base != resolved_commit:
+            raise Phase11Error(
+                "Disposable overlay-review commit does not have the selected base: "
+                f"parent={clone_base}; selected={resolved_commit}"
+            )
+        return clone_base
+    raise Phase11Error(f"Unsupported verification mode: {mode}")
+
+
+def verify_isolated(
+    *,
+    mode: str,
+    selected_commit: str,
+    overlay_paths: frozenset[str],
+) -> dict[str, object]:
+    resolved_commit = validate_isolation_request(
+        ROOT, mode=mode, selected_commit=selected_commit,
+        overlay_paths=overlay_paths,
+    )
     before_manifest = repository_manifest()
     before_status = git_status()
+    before_head = git_head()
+    before_git_config = git_config_digest()
     prior_validation_paths = [
         relative for relative in repository_paths()
         if relative.endswith("VALIDATION_RESULTS.csv") and not relative.startswith("data/phase11/")
     ]
     prior_before = {relative: sha256(ROOT / relative) for relative in prior_validation_paths}
-    holder, destination = isolated_clone()
+    holder, destination = isolated_clone(
+        mode=mode, selected_commit=resolved_commit, overlay_paths=overlay_paths,
+    )
     clone_type = "disposable local no-hardlinks clone"
     try:
+        clone_head_before = git_head(destination)
+        clone_status_before = generation_git_status(destination)
+        clone_git_config_before = git_config_digest(destination)
+        clone_base_before = validate_verification_clone_start(
+            destination, mode=mode, resolved_commit=resolved_commit,
+            clone_head=clone_head_before, clone_status=clone_status_before,
+        )
         reproduction_output = run([sys.executable, "-B", "scripts/phase11.py", "reproduce"], cwd=destination, extra_env=GIT_WINDOWS_TEXT_ENV)
         reproduction = json.loads(reproduction_output.splitlines()[-1])
         validate_output = run([sys.executable, "-B", "scripts/phase11.py", "validate"], cwd=destination, extra_env=GIT_WINDOWS_TEXT_ENV)
@@ -918,23 +1387,62 @@ def verify_isolated() -> dict[str, object]:
         independent = run([sys.executable, "-B", "-m", "unittest", "-v", "tests.test_audit_remediation"], cwd=destination, extra_env=GIT_WINDOWS_TEXT_ENV)
         engines_output = run([sys.executable, "-B", "scripts/phase11.py", "engine-gates"], cwd=destination, extra_env=GIT_WINDOWS_TEXT_ENV)
         engines = json.loads(engines_output.splitlines()[-1])
+        clone_head_after = git_head(destination)
+        clone_status_after = generation_git_status(destination)
+        clone_git_config_after = git_config_digest(destination)
+        if clone_head_after != clone_head_before:
+            raise Phase11Error(
+                "Disposable verification changed candidate HEAD: "
+                f"before={clone_head_before}; after={clone_head_after}"
+            )
+        if clone_status_after:
+            raise Phase11Error(
+                "Disposable verification did not reproduce the committed candidate exactly; status="
+                + clone_status_after
+            )
+        if clone_git_config_after != clone_git_config_before:
+            raise Phase11Error("Disposable verification changed Git configuration")
     finally:
-        holder.cleanup()
-    after_manifest = repository_manifest()
-    after_status = git_status()
-    prior_after = {relative: sha256(ROOT / relative) for relative in prior_validation_paths}
-    if before_manifest != after_manifest:
-        changed = [p for p in sorted(set(before_manifest) | set(after_manifest)) if before_manifest.get(p) != after_manifest.get(p)]
-        raise Phase11Error("Final isolated verification modified repository: " + ", ".join(changed))
-    if before_status != after_status:
-        raise Phase11Error("Final isolated verification changed Git status")
-    if prior_before != prior_after:
-        raise Phase11Error("Final isolated verification changed prior validation outputs")
+        try:
+            holder.cleanup()
+        finally:
+            after_manifest = repository_manifest()
+            after_status = git_status()
+            after_head = git_head()
+            after_git_config = git_config_digest()
+            prior_after = {relative: sha256(ROOT / relative) for relative in prior_validation_paths}
+            if before_manifest != after_manifest:
+                changed = [p for p in sorted(set(before_manifest) | set(after_manifest)) if before_manifest.get(p) != after_manifest.get(p)]
+                raise Phase11Error("Final isolated verification modified repository: " + ", ".join(changed))
+            if before_status != after_status:
+                raise Phase11Error("Final isolated verification changed Git status")
+            if before_head != after_head or before_head != resolved_commit:
+                raise Phase11Error(
+                    f"Final isolated verification changed or mismatched source HEAD: before={before_head}; "
+                    f"after={after_head}; selected={resolved_commit}"
+                )
+            if prior_before != prior_after:
+                raise Phase11Error("Final isolated verification changed prior validation outputs")
+            if before_git_config != after_git_config:
+                raise Phase11Error("Final isolated verification changed source Git configuration")
     return {
-        "status": "PASS", "clone_type": clone_type, "cleanup": "PASS",
+        "status": "PASS", "verification_mode": mode,
+        "selected_commit": resolved_commit, "overlay_paths": len(overlay_paths),
+        "clone_type": clone_type, "cleanup": "PASS",
         "before_manifest_digest": manifest_digest(before_manifest),
         "after_manifest_digest": manifest_digest(after_manifest),
         "manifest_files": len(before_manifest), "git_status_identical": True,
+        "source_head_before": before_head, "source_head_after": after_head,
+        "source_git_config_before_digest": before_git_config,
+        "source_git_config_after_digest": after_git_config,
+        "source_git_config_identical": True,
+        "clone_head_before": clone_head_before, "clone_head_after": clone_head_after,
+        "clone_base_commit": clone_base_before,
+        "clone_git_status_before": clone_status_before,
+        "clone_git_status_after": clone_status_after,
+        "clone_git_config_before_digest": clone_git_config_before,
+        "clone_git_config_after_digest": clone_git_config_after,
+        "clone_git_config_identical": True,
         "prior_validation_files": len(prior_before), "prior_validation_files_identical": True,
         "reproduction": reproduction, "validation": validate_output.splitlines()[-1],
         "complete_tests": _test_count(full), "focused_tests": _test_count(focused),
@@ -945,15 +1453,43 @@ def verify_isolated() -> dict[str, object]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("all", "validate", "verify-isolated", "reproduce", "engine-gates", "metadata"))
+    parser.add_argument(
+        "command",
+        choices=(
+            "all", "validate", "verify-release", "verify-overlay",
+            "verify-isolated", "reproduce", "engine-gates", "metadata",
+        ),
+    )
+    parser.add_argument("--commit", help="explicit commit for clean-release verification")
+    parser.add_argument("--base", help="explicit base commit for pre-commit overlay review")
+    parser.add_argument("--overlay-manifest", type=Path, help="one explicit repository-relative overlay path per line")
     args = parser.parse_args()
+    overlay_paths = read_overlay_manifest(args.overlay_manifest) if args.overlay_manifest else None
     if args.command == "all":
-        print("Phase 11 complete: " + json.dumps(build_outputs(), sort_keys=True))
+        if not args.base or overlay_paths is None or args.commit:
+            parser.error("all requires --base and --overlay-manifest for explicit pre-commit generation")
+        print("Phase 11 complete: " + json.dumps(build_outputs(
+            base_commit=args.base, overlay_paths=overlay_paths,
+        ), sort_keys=True))
     elif args.command == "validate":
-        rows = validate()
+        if args.commit or args.base:
+            parser.error("validate accepts only optional --overlay-manifest")
+        rows = validate(allowed_changes=overlay_paths)
         print(f"Phase 11 validation: PASS ({len(rows)} controls)")
-    elif args.command == "verify-isolated":
-        print(json.dumps(verify_isolated(), sort_keys=True))
+    elif args.command in {"verify-release", "verify-isolated"}:
+        if not args.commit or args.base or overlay_paths is not None:
+            parser.error(f"{args.command} requires --commit and permits no overlay")
+        print(json.dumps(verify_isolated(
+            mode=RELEASE_MODE, selected_commit=args.commit,
+            overlay_paths=frozenset(),
+        ), sort_keys=True))
+    elif args.command == "verify-overlay":
+        if not args.base or overlay_paths is None or args.commit:
+            parser.error("verify-overlay requires --base and --overlay-manifest")
+        print(json.dumps(verify_isolated(
+            mode=OVERLAY_MODE, selected_commit=args.base,
+            overlay_paths=overlay_paths,
+        ), sort_keys=True))
     elif args.command == "reproduce":
         print(json.dumps(reproduction_in_current_clone(), sort_keys=True))
     elif args.command == "engine-gates":

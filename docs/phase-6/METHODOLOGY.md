@@ -20,7 +20,7 @@ Maturity capacity becomes zero and available cash above the floor is applied to 
 
 ## Thresholds and drawability
 
-The model separately reports gross funded leverage, book-cash net leverage (diagnostic only), analytical bank leverage, EBITDA/cash-interest coverage, CFADS/cash-interest coverage, CFADS/scheduled-debt-service coverage, and usable liquidity. The 3.25x/3.00x leverage, 3.00x coverage, and $50m liquidity levels are analytical warnings, not final covenants.
+The model separately reports gross funded leverage, book-cash net leverage (diagnostic only), analytical bank leverage, EBITDA/LTM cash-interest-due-or-payable coverage, CFADS/cash-interest-paid coverage, CFADS/scheduled-debt-service coverage, and usable liquidity. Interest due, interest paid, and accumulated arrears remain separate: unpaid current interest does not improve the defined EBITDA coverage ratio, the cash waterfall uses the amount actually paid, and accumulated arrears are not counted again as newly due. The modeled due-or-payable denominator excludes unavailable retained-obligation interest, recurring fees, default interest, capitalization, and final legal-definition effects, so it is not certified compliance. The 3.25x/3.00x leverage, 3.00x coverage, and $50m liquidity levels are analytical warnings, not final covenants.
 
 Formal contractual compliance is `NOT_DETERMINABLE`. The proposed no-waiver path switches off new revolver draws beginning the month after the first modeled analytical failure. The continued-drawability path leaves capacity available. Existing-facility drawability is never switched off from this unofficial reconstruction.
 

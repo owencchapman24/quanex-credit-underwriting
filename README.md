@@ -58,12 +58,13 @@ The analytical Python workflows use the standard library and no live network inp
 From the repository root on the tested Windows environment:
 
 ```powershell
-python -B scripts/phase11.py all
+python -B scripts/phase11.py all --base <base-sha> --overlay-manifest <manifest-path>
 python -B scripts/phase11.py validate
-python -B scripts/phase11.py verify-isolated
+python -B scripts/phase11.py verify-overlay --base <base-sha> --overlay-manifest <manifest-path>
+python -B scripts/phase11.py verify-release --commit <candidate-sha>
 ```
 
-`all` generates only Phase 11 records and runs the analytical build in a disposable local clone. `validate` is read-only. `verify-isolated` repeats write-producing builds, complete tests, spreadsheet-engine checks, and comparison controls in a disposable clone, then confirms the authoritative repository manifest and Git status did not change. No SEC or other live analytical retrieval is required. Exact prerequisites and the underlying command order are documented in [REPRODUCIBILITY.md](docs/phase-11/REPRODUCIBILITY.md).
+`all` validates the pre-generation manifest, generates only the fixed Phase 11 output inventory, and uses the declared pre-commit overlay in a disposable local clone. Refresh the external manifest from the final working-tree status after generation; `validate` is read-only against that refreshed inventory, and `verify-overlay` reviews it without establishing a clean release. After commit, `verify-release` repeats write-producing builds, complete tests, spreadsheet-engine checks, and comparison controls from the explicitly selected clean commit with zero overlays, then confirms the source manifest, HEAD, and Git status did not change. No SEC or other live analytical retrieval is required. Exact prerequisites and the underlying command order are documented in [REPRODUCIBILITY.md](docs/phase-11/REPRODUCIBILITY.md).
 
 Full regeneration is established only for the documented Windows environment and depends on the documented Python, Node.js, `@oai/artifact-tool`, Microsoft Excel, LibreOffice, and PowerShell toolchain; compatibility in other environments is untested.
 
@@ -99,4 +100,4 @@ python scripts/phase8.py all
 python -m unittest discover -s tests -v
 ```
 
-The workbook preserves the approved Phase 7 provisional structure. The conditional $15 million source, closing cash interest, legal definitions and other diligence items remain unresolved. Recovery analysis remains pending Phase 9, and no final credit recommendation is made.
+The workbook preserves the approved Phase 7 provisional structure. At Phase 8 completion, recovery analysis and the final recommendation were still pending; those historical phase boundaries do not supersede the current **Conditional Approval** recommendation above. The conditional $15 million source, closing cash-interest evidence, legal definitions, and other stated diligence items remain unresolved.

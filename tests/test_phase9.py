@@ -7,16 +7,25 @@ import hashlib
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 import zipfile
 from decimal import Decimal
 from pathlib import Path
+from unittest import mock
 from xml.etree import ElementTree as ET
 
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import phase9  # noqa: E402
+from remediation_controls import (  # noqa: E402
+    PHASE2_AUTHORIZED_SHA256,
+    PHASE6_AUTHORIZED_SHA256,
+    PHASE7_AUTHORIZED_SHA256,
+    PHASE8_AUTHORIZED_SHA256,
+    unapproved_paths,
+)
 
 NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main", "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships", "p": "http://schemas.openxmlformats.org/package/2006/relationships"}
 
@@ -91,6 +100,22 @@ class Phase9Tests(unittest.TestCase):
         self.assertEqual(checkpoint["approved_phase8_commit"], phase9.APPROVED_PHASE8_COMMIT)
         self.assertEqual(checkpoint["phase8_normalized_fingerprint"], phase9.PHASE8_FINGERPRINT)
         self.assertEqual(checkpoint["information_cutoff"], "2025-12-15")
+        lineage = next(
+            row for row in self.validation
+            if row["test_name"] == "approved Phase 8 ancestry"
+        )
+        self.assertEqual(lineage["observed"], "approved ancestor confirmed")
+        self.assertEqual(
+            lineage["expected"], f"{phase9.APPROVED_PHASE8_COMMIT} is an ancestor",
+        )
+
+    def test_01a_phase8_pre_overlay_identity_record_passes(self) -> None:
+        records = rows(phase9.PHASE8_BASELINE_EVIDENCE)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(set(records[0]), set(phase9.PHASE8_BASELINE_EVIDENCE_FIELDS))
+        self.assertEqual(records[0]["status"], "PASS")
+        self.assertEqual(records[0]["observed_normalized_fingerprint"], phase9.PHASE8_FINGERPRINT)
+        self.assertEqual(phase9.phase8_baseline_evidence_state()[0], "PASS")
 
     def test_02_assumption_register_complete_and_classified(self) -> None:
         self.assertEqual(len(self.assumptions), 28)
@@ -193,8 +218,13 @@ class Phase9Tests(unittest.TestCase):
         self.assertTrue(all(all(r[field] for field in required) for r in self.monitors))
 
     def test_19_warning_and_contractual_thresholds_distinct(self) -> None:
-        leverage = next(r for r in self.monitors if r["monitor_id"] == "MON-013")
+        leverage = next(r for r in self.monitors if r["monitor_id"] == "MON-015")
+        self.assertTrue(leverage["covenant_or_contractual_threshold"])
         self.assertNotEqual(leverage["warning_threshold"], leverage["covenant_or_contractual_threshold"])
+        for monitor_id in ("MON-012", "MON-016"):
+            minimum = next(r for r in self.monitors if r["monitor_id"] == monitor_id)
+            self.assertEqual(minimum["comparator_direction"], "less_than_or_equal")
+            self.assertIn("at or below", minimum["warning_threshold"].lower())
 
     def test_20_escalation_classes_complete(self) -> None:
         classes = {r["severity_classification"] for r in rows(phase9.PROCESSED / "ESCALATION_ACTION_REGISTER.csv")}
@@ -211,7 +241,7 @@ class Phase9Tests(unittest.TestCase):
         self.assertTrue(all((ROOT / r["source_path"]).is_file() for r in self.ledger))
 
     def test_23_validation_controls_pass(self) -> None:
-        self.assertEqual(len(self.validation), 37)
+        self.assertEqual(len(self.validation), 38)
         self.assertTrue(all(r["status"] == "PASS" for r in self.validation))
 
     def test_24_sheet_order_and_external_links(self) -> None:
@@ -257,26 +287,39 @@ class Phase9Tests(unittest.TestCase):
         self.assertEqual(values["selected_maturity_gap"], Decimal("324.779705120148"))
 
     def test_30_only_permitted_prior_phase_artifacts_changed(self) -> None:
-        result = subprocess.run(["git", "diff", "--name-only", "--", "data/phase1", "data/phase2", "data/phase3", "data/phase4", "data/phase5", "data/phase6", "data/phase7", "data/phase8", "docs/phase-0", "docs/phase-1", "docs/phase-2", "docs/phase-3", "docs/phase-4", "docs/phase-5", "docs/phase-6", "docs/phase-7", "docs/phase-8"], cwd=ROOT, text=True, capture_output=True, check=True)
-        changed = {line for line in result.stdout.splitlines() if line}
-        allowed = {
-            "docs/phase-7/COVENANT_DESIGN.md",
-            "docs/phase-8/METHODOLOGY.md", "docs/phase-8/CALCULATION_VALIDATION.md",
-            "docs/phase-8/SOURCE_LEDGER.csv", "data/phase8/processed/WORKBOOK_MAP.csv",
-            "data/phase8/processed/WORKBOOK_VALIDATION_RESULTS.csv",
-            "data/phase8/processed/DYNAMIC_TEST_EVIDENCE.csv",
-            "data/phase8/processed/SCENARIO_CAPTURE_RESULTS.csv",
-            "data/phase8/processed/OPENING_DEBT_COMPARISON.csv",
-            "data/phase8/processed/TERM_SIZING_SENSITIVITY.csv",
-            "data/phase8/processed/AMORTIZATION_SENSITIVITY_RESULTS.csv",
-            "data/phase8/raw/STARTING_CHECKPOINT.csv",
-        }
-        self.assertLessEqual(changed, allowed)
+        scope = [
+            "data/phase1", "data/phase2", "data/phase3", "data/phase4",
+            "data/phase5", "data/phase6", "data/phase7", "data/phase8",
+            "docs/phase-0", "docs/phase-1", "docs/phase-2", "docs/phase-3",
+            "docs/phase-4", "docs/phase-5", "docs/phase-6", "docs/phase-7",
+            "docs/phase-8",
+        ]
+        tracked = subprocess.run(
+            ["git", "diff", "--name-only", "HEAD", "--", *scope],
+            cwd=ROOT, text=True, capture_output=True, check=True,
+        ).stdout.splitlines()
+        untracked = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard", "--", *scope],
+            cwd=ROOT, text=True, capture_output=True, check=True,
+        ).stdout.splitlines()
+        changed = [line for line in [*tracked, *untracked] if line]
+        self.assertEqual(
+            unapproved_paths(
+                ROOT,
+                changed,
+                PHASE2_AUTHORIZED_SHA256,
+                PHASE6_AUTHORIZED_SHA256,
+                PHASE7_AUTHORIZED_SHA256,
+                PHASE8_AUTHORIZED_SHA256,
+            ),
+            [],
+        )
 
     def test_31_dynamic_workbook_behavior(self) -> None:
-        report = phase9.dynamic()
+        with tempfile.TemporaryDirectory(prefix="quanex-p9-engine-evidence-") as directory:
+            report = phase9.dynamic(Path(directory) / "dynamic.csv")
         self.assertEqual(report["dynamic_status"], "PASS")
-        self.assertEqual(report["test_count"], 41)
+        self.assertEqual(report["test_count"], len(phase9.REQUIRED_DYNAMIC_CASES))
         self.assertEqual(report["phase9_check_failures"], 0)
         self.assertEqual(report["recovery_parity_failures"], 0)
 
@@ -286,6 +329,262 @@ class Phase9Tests(unittest.TestCase):
         phase9.build_data()
         after = {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in tracked}
         self.assertEqual(before, after)
+
+
+class Phase9DynamicEvidenceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.evidence = Path(self.temp.name) / "dynamic.csv"
+        self.patch = mock.patch.object(phase9, "DYNAMIC_EVIDENCE", self.evidence)
+        self.patch.start()
+        self.report = {
+            "dynamic_status": "PASS",
+            "tests": [
+                {"test": case["test_name"], "status": "PASS", "observed": {"case": case["case_id"]}}
+                for case in phase9.REQUIRED_DYNAMIC_CASES
+            ],
+            "engine": phase9.DYNAMIC_TEST_ENGINE,
+            "final_scenario": "Base",
+            "tested_artifact": phase9.DYNAMIC_TESTED_ARTIFACT,
+            "tested_artifact_sha256": phase9.sha256(phase9.MODEL),
+            "tested_artifact_semantic_fingerprint": phase9.normalized_fingerprint(),
+        }
+
+    def tearDown(self) -> None:
+        self.patch.stop()
+        self.temp.cleanup()
+
+    def write_valid(self) -> list[dict[str, str]]:
+        phase9.write_dynamic_evidence(self.report)
+        return rows(self.evidence)
+
+    def replace_rows(self, evidence_rows: list[dict[str, str]]) -> None:
+        phase9.write_csv(self.evidence, evidence_rows, list(phase9.DYNAMIC_EVIDENCE_FIELDS))
+
+    def test_complete_versioned_registry_passes_with_full_metadata(self) -> None:
+        evidence_rows = self.write_valid()
+        self.assertEqual(len(evidence_rows), len(phase9.REQUIRED_DYNAMIC_CASES))
+        self.assertEqual(
+            tuple(phase9.REQUIRED_PHASE8_DYNAMIC_CASES),
+            tuple(dict(case) for case in phase9.phase8.REQUIRED_DYNAMIC_CASES),
+        )
+        self.assertEqual(len(phase9.REQUIRED_RECOVERY_DYNAMIC_CASES), 13)
+        self.assertIn("phase9_recovery", {row["stage"] for row in evidence_rows})
+        self.assertTrue(all(row["test_definition_version"] == phase9.DYNAMIC_TEST_DEFINITION_VERSION for row in evidence_rows))
+        self.assertTrue(all(all(row[field] for field in phase9.DYNAMIC_EVIDENCE_FIELDS) for row in evidence_rows))
+        self.assertEqual(phase9.dynamic_evidence_state()[0], "PASS")
+
+    def test_missing_schema_field_fails(self) -> None:
+        valid = self.write_valid()
+        fields = [field for field in phase9.DYNAMIC_EVIDENCE_FIELDS if field != "input_scope"]
+        phase9.write_csv(self.evidence, valid, fields)
+        self.assertEqual(phase9.dynamic_evidence_state()[0], "FAIL")
+
+    def test_truncated_duplicate_and_extra_case_sets_fail(self) -> None:
+        valid = self.write_valid()
+        variants = {
+            "truncated": valid[:-1],
+            "duplicate": valid[:-1] + [dict(valid[0])],
+            "extra": valid + [{**valid[-1], "evidence_id": "P9DE-999", "case_id": "P9DT-999", "test_name": "undeclared test"}],
+        }
+        for label, evidence_rows in variants.items():
+            with self.subTest(label=label):
+                self.replace_rows(evidence_rows)
+                self.assertEqual(phase9.dynamic_evidence_state()[0], "FAIL")
+
+    def test_failed_not_run_and_unknown_statuses_cannot_pass(self) -> None:
+        valid = self.write_valid()
+        for status, expected in (("FAIL", "FAIL"), ("NOT_RUN", "NOT_RUN"), ("N/D", "FAIL")):
+            with self.subTest(status=status):
+                changed = [dict(row) for row in valid]
+                changed[0]["status"] = status
+                self.replace_rows(changed)
+                self.assertEqual(phase9.dynamic_evidence_state()[0], expected)
+
+    def test_blank_or_stale_metadata_fails(self) -> None:
+        valid = self.write_valid()
+        for field, value in (
+            ("stage", ""),
+            ("evidence_id", "P9DE-999"),
+            ("scenario", "wrong scenario"),
+            ("input_scope", "wrong input"),
+            ("engine", "different engine"),
+            ("dynamic_script_sha256", "0" * 64),
+            ("workbook_builder_sha256", "0" * 64),
+            ("semantic_comparator_sha256", "0" * 64),
+            ("upstream_dynamic_script_sha256", "0" * 64),
+            ("upstream_workbook_builder_sha256", "0" * 64),
+            ("source_input_signature", "0" * 64),
+            ("test_definition_version", "obsolete"),
+            ("test_definition_sha256", "0" * 64),
+            ("tested_artifact", "different.xlsx"),
+            ("tested_artifact_sha256", "0" * 64),
+            ("tested_artifact_semantic_fingerprint", "0" * 64),
+        ):
+            with self.subTest(field=field):
+                changed = [dict(row) for row in valid]
+                changed[0][field] = value
+                self.replace_rows(changed)
+                self.assertEqual(phase9.dynamic_evidence_state()[0], "FAIL")
+
+    def test_writer_rejects_incomplete_duplicate_or_failed_reports(self) -> None:
+        variants = {
+            "incomplete": self.report["tests"][:-1],
+            "duplicate": self.report["tests"][:-1] + [dict(self.report["tests"][0])],
+            "failed": [{**item, "status": "FAIL"} if index == 0 else item for index, item in enumerate(self.report["tests"])],
+            "not_run": [{**item, "status": "NOT_RUN"} if index == 0 else item for index, item in enumerate(self.report["tests"])],
+            "missing_observed": [{key: value for key, value in item.items() if key != "observed"} if index == 0 else item for index, item in enumerate(self.report["tests"])],
+        }
+        for label, test_rows in variants.items():
+            with self.subTest(label=label):
+                self.report["tests"] = test_rows
+                with self.assertRaises(phase9.Phase9Error):
+                    phase9.write_dynamic_evidence(self.report)
+                self.assertFalse(self.evidence.exists())
+                self.report["tests"] = [
+                    {"test": case["test_name"], "status": "PASS", "observed": {"case": case["case_id"]}}
+                    for case in phase9.REQUIRED_DYNAMIC_CASES
+                ]
+
+    def test_custom_evidence_is_separate_and_must_match_current_artifact(self) -> None:
+        self.evidence.write_bytes(b"preserve stage evidence")
+        stage_before = self.evidence.read_bytes()
+        custom = Path(self.temp.name) / "phase10-final-dynamic.csv"
+        label = "model/Quanex_Credit_Underwriting.xlsx (Phase 10 final artifact)"
+        report = dict(self.report)
+        report["tested_artifact"] = label
+        phase9.write_dynamic_evidence(
+            report, evidence_path=custom, tested_artifact=label,
+        )
+        self.assertEqual(self.evidence.read_bytes(), stage_before)
+        self.assertEqual(
+            phase9.dynamic_evidence_state(custom, tested_artifact=label)[0],
+            "PASS",
+        )
+        evidence_rows = rows(custom)
+        for row in evidence_rows:
+            row["tested_artifact_sha256"] = "0" * 64
+        phase9.write_csv(custom, evidence_rows, list(phase9.DYNAMIC_EVIDENCE_FIELDS))
+        self.assertEqual(
+            phase9.dynamic_evidence_state(custom, tested_artifact=label)[0],
+            "FAIL",
+        )
+
+
+class Phase9PreOverlayEvidenceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.evidence = Path(self.temp.name) / "phase8-baseline.csv"
+        self.patch = mock.patch.object(phase9, "PHASE8_BASELINE_EVIDENCE", self.evidence)
+        self.patch.start()
+        self.artifact_sha = "a" * 64
+        self.record = {
+            "verification_id": "P9P8-001",
+            "tested_artifact": "model/Quanex_Credit_Underwriting.xlsx before Phase 9 overlay",
+            "tested_artifact_sha256": self.artifact_sha,
+            "observed_normalized_fingerprint": phase9.PHASE8_FINGERPRINT,
+            "expected_normalized_fingerprint": phase9.PHASE8_FINGERPRINT,
+            "phase8_source_input_signature": phase9.phase8.source_signature(),
+            "phase8_builder_sha256": phase9.sha256(ROOT / "scripts" / "build-phase8.mjs"),
+            "phase8_semantic_comparator_sha256": phase9.sha256(ROOT / "scripts" / "workbook_semantics.py"),
+            "phase8_dynamic_definition_sha256": phase9.phase8.dynamic_test_definition_sha256(),
+            "status": "PASS",
+        }
+
+    def tearDown(self) -> None:
+        self.patch.stop()
+        self.temp.cleanup()
+
+    def write_record(self, record: dict[str, str] | None = None) -> None:
+        phase9.write_csv(
+            self.evidence,
+            [record or self.record],
+            list(phase9.PHASE8_BASELINE_EVIDENCE_FIELDS),
+        )
+
+    def state(self) -> tuple[str, str]:
+        with (
+            mock.patch.object(phase9.phase8, "dynamic_evidence_state", return_value=("PASS", "complete")),
+            mock.patch.object(
+                phase9.phase8,
+                "dynamic_evidence_artifact_identity",
+                return_value=(self.artifact_sha, phase9.PHASE8_FINGERPRINT),
+            ),
+        ):
+            return phase9.phase8_baseline_evidence_state()
+
+    def test_complete_pre_overlay_record_passes(self) -> None:
+        self.write_record()
+        self.assertEqual(self.state()[0], "PASS")
+
+    def test_missing_duplicate_or_stale_pre_overlay_record_fails(self) -> None:
+        self.assertEqual(self.state()[0], "NOT_RUN")
+        phase9.write_csv(self.evidence, [self.record, self.record], list(phase9.PHASE8_BASELINE_EVIDENCE_FIELDS))
+        self.assertEqual(self.state()[0], "FAIL")
+        for field, value in (
+            ("verification_id", "wrong"),
+            ("tested_artifact", "wrong.xlsx"),
+            ("tested_artifact_sha256", "not-a-sha"),
+            ("observed_normalized_fingerprint", "0" * 64),
+            ("expected_normalized_fingerprint", "0" * 64),
+            ("phase8_source_input_signature", "0" * 64),
+            ("phase8_builder_sha256", "0" * 64),
+            ("phase8_semantic_comparator_sha256", "0" * 64),
+            ("phase8_dynamic_definition_sha256", "0" * 64),
+            ("status", "FAIL"),
+        ):
+            with self.subTest(field=field):
+                changed = dict(self.record)
+                changed[field] = value
+                self.write_record(changed)
+                self.assertEqual(self.state()[0], "FAIL")
+
+    def test_verifier_binds_phase8_dynamic_evidence_to_actual_workbook(self) -> None:
+        workbook = Path(self.temp.name) / "candidate.xlsx"
+        workbook.write_bytes(b"candidate workbook")
+        actual_sha = phase9.sha256(workbook)
+        with (
+            mock.patch.object(phase9, "phase8_baseline_fingerprint", return_value=phase9.PHASE8_FINGERPRINT),
+            mock.patch.object(phase9.phase8, "dynamic_evidence_state", return_value=("PASS", "complete")),
+            mock.patch.object(
+                phase9.phase8,
+                "dynamic_evidence_artifact_identity",
+                return_value=(actual_sha, phase9.PHASE8_FINGERPRINT),
+            ),
+        ):
+            record = phase9.verify_phase8_baseline(workbook)
+        self.assertEqual(record["status"], "PASS")
+        self.assertEqual(record["tested_artifact_sha256"], actual_sha)
+
+    def test_verifier_rejects_wrong_pre_overlay_fingerprint(self) -> None:
+        workbook = Path(self.temp.name) / "candidate.xlsx"
+        workbook.write_bytes(b"candidate workbook")
+        actual_sha = phase9.sha256(workbook)
+        with (
+            mock.patch.object(phase9, "phase8_baseline_fingerprint", return_value="0" * 64),
+            mock.patch.object(phase9.phase8, "dynamic_evidence_state", return_value=("PASS", "complete")),
+            mock.patch.object(
+                phase9.phase8,
+                "dynamic_evidence_artifact_identity",
+                return_value=(actual_sha, "0" * 64),
+            ),
+            self.assertRaises(phase9.Phase9Error),
+        ):
+            phase9.verify_phase8_baseline(workbook)
+
+    def test_read_only_validation_does_not_rewrite_phase9_record(self) -> None:
+        failing_report = {
+            "engine": "fixture", "final_scenario": "Base",
+            "phase9_check_failures": 1, "recovery_parity_failures": 1,
+        }
+        with mock.patch.object(phase9, "write_csv") as writer:
+            with self.assertRaises(phase9.Phase9Error):
+                phase9.validate(failing_report, write_outputs=False)
+            writer.assert_not_called()
+        with mock.patch.object(phase9, "write_csv") as writer:
+            with self.assertRaises(phase9.Phase9Error):
+                phase9.validate(failing_report)
+            writer.assert_called_once()
 
 
 if __name__ == "__main__":

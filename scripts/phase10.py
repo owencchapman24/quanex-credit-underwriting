@@ -22,6 +22,17 @@ from decimal import Decimal
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+from workbook_semantics import semantic_workbook_fingerprint
+from xlsx_package import canonicalize_xlsx
+from remediation_controls import (
+    PHASE10_PRIOR_AUTHORIZED_SHA256,
+    exact_authorized_paths,
+    unapproved_paths,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data" / "phase10"
@@ -30,6 +41,16 @@ PROCESSED = DATA / "processed"
 DOCS = ROOT / "docs" / "phase-10"
 REPORTS = ROOT / "reports"
 MODEL = ROOT / "model" / "Quanex_Credit_Underwriting.xlsx"
+PHASE8_FINAL_DYNAMIC_EVIDENCE = PROCESSED / "FINAL_WORKBOOK_PHASE8_DYNAMIC_EVIDENCE.csv"
+PHASE9_FINAL_DYNAMIC_EVIDENCE = PROCESSED / "FINAL_WORKBOOK_PHASE9_DYNAMIC_EVIDENCE.csv"
+PHASE8_FINAL_DYNAMIC_ARTIFACT = (
+    "model/Quanex_Credit_Underwriting.xlsx "
+    "(Phase 10 final-artifact disposable Phase 8 integration test copy)"
+)
+PHASE9_FINAL_DYNAMIC_ARTIFACT = (
+    "model/Quanex_Credit_Underwriting.xlsx "
+    "(Phase 10 final-artifact disposable Phase 9 recovery test copy)"
+)
 APPROVED_PHASE9_COMMIT = "fe00c19ab717900fe5c7484d8f57975c83483cba"
 INFORMATION_CUTOFF = "2025-12-15"
 HYPOTHETICAL_CLOSING = "2026-01-31"
@@ -68,28 +89,6 @@ SOURCE_INPUTS = (
     "data/phase9/processed/RECOVERY_CASE_REGISTER.csv",
     "data/phase9/processed/MONITORING_SCHEDULE.csv",
 )
-
-# These exact prior-phase paths are part of the approved independent-audit
-# remediation. Excluding only them from the clean-clone baseline overlay lets
-# the later working-tree overlay carry the reviewed delta without weakening the
-# guard for any unrelated prior-phase analytical change.
-AUDIT_REMEDIATION_PRIOR_PHASE_EXCEPTIONS = frozenset({
-    "data/phase8/processed/AMORTIZATION_SENSITIVITY_RESULTS.csv",
-    "data/phase8/processed/OPENING_DEBT_COMPARISON.csv",
-    "data/phase8/processed/SCENARIO_CAPTURE_RESULTS.csv",
-    "data/phase8/processed/TERM_SIZING_SENSITIVITY.csv",
-    "data/phase8/processed/WORKBOOK_MAP.csv",
-    "data/phase8/processed/WORKBOOK_VALIDATION_RESULTS.csv",
-    "data/phase8/raw/STARTING_CHECKPOINT.csv",
-    "data/phase9/processed/VALIDATION_RESULTS.csv",
-    "data/phase9/raw/STARTING_CHECKPOINT.csv",
-    "docs/phase-7/COVENANT_DESIGN.md",
-    "docs/phase-8/CALCULATION_VALIDATION.md",
-    "docs/phase-8/METHODOLOGY.md",
-    "docs/phase-8/SOURCE_LEDGER.csv",
-    "docs/phase-9/METHODOLOGY.md",
-})
-
 
 class Phase10Error(RuntimeError):
     """Raised when a Phase 10 control fails."""
@@ -213,11 +212,18 @@ def excel_validation_on_copy(script_name: str, source: Path = MODEL) -> str:
     return output
 
 
+def authorized_prior_paths() -> frozenset[str]:
+    """Return prior analytical artifacts that still match reviewed bytes."""
+
+    return exact_authorized_paths(ROOT, PHASE10_PRIOR_AUTHORIZED_SHA256)
+
+
 def isolation_baseline_paths(prior_artifact_paths: list[str]) -> list[str]:
-    """Return clean-clone baseline overlays, retaining unknown paths for rejection."""
+    """Return clean-clone overlays, retaining altered reviewed paths for rejection."""
+
     return sorted(
         (set(prior_artifact_paths) | set(SOURCE_INPUTS))
-        - AUDIT_REMEDIATION_PRIOR_PHASE_EXCEPTIONS
+        - set(authorized_prior_paths())
     )
 
 
@@ -255,8 +261,13 @@ def isolated_workspace() -> tuple[tempfile.TemporaryDirectory[str], Path]:
     for relative in exact_baseline_paths:
         source = ROOT / relative
         target = destination / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, target)
+        if source.is_file():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+        elif target.is_file():
+            target.unlink()
+        else:
+            raise Phase10Error(f"Isolated baseline path is unavailable: {relative}")
     run_command(["git", "add", "--", *exact_baseline_paths], cwd=destination)
     staged_baseline = run_command(
         ["git", "diff", "--cached", "--name-only", "--", *exact_baseline_paths],
@@ -425,7 +436,7 @@ def committee_metrics() -> list[dict[str, str]]:
         cap = first(captures, scenario_id=scenario)
         cov = first(covenants, scenario_id=scenario)
         for name, field, units in (
-            ("fy2026_lender_ebitda", "fy2026_ebitda", "USD_millions"),
+            ("fy2026_post_closing_nine_month_lender_ebitda", "fy2026_ebitda", "USD_millions"),
             ("modeled_operating_cash", "modeled_operating_cash", "USD_millions"),
             ("cfads", "cfads", "USD_millions"),
             ("cash_interest", "cash_interest", "USD_millions"),
@@ -438,8 +449,8 @@ def committee_metrics() -> list[dict[str, str]]:
             ("unsupported_maturity_gap", "maturity_gap", "USD_millions"),
             ("unpaid_obligations", "unpaid_obligations", "USD_millions"),
         ):
-            if name == "fy2026_lender_ebitda":
-                horizon, basis = "FY2026", "annual_fiscal_period"
+            if name == "fy2026_post_closing_nine_month_lender_ebitda":
+                horizon, basis = "2026-02-01 through 2026-10-31", "post_closing_nine_month_period"
             elif name in {"modeled_operating_cash", "cfads", "cash_interest", "scheduled_principal", "ecf_sweep_realized", "unpaid_obligations"}:
                 horizon, basis = "2026-02-01 through 2031-01-31", "cumulative_model_period"
             elif name in {"all_in_minimum_liquidity", "minimum_cash_interest_coverage"}:
@@ -450,7 +461,12 @@ def committee_metrics() -> list[dict[str, str]]:
                 horizon, basis = "2029-07-31", "point_in_time_total_funded_debt"
             else:
                 horizon, basis = "2031-01-31", "point_in_time_bank_debt_maturity_gap"
-            add("scenario", name, scenario, cap[field], units, "approved_prior_phase_model_output", "data/phase8/processed/SCENARIO_CAPTURE_RESULTS.csv", cap["capture_id"], "approved_upstream", "Scenario output; no refinancing proceeds assumed.", horizon, basis)
+            limitations = (
+                "FY2026 post-closing nine-month EBITDA covers Q2-Q4 only; it is not an annual figure. Pre-closing Q1 is excluded from this metric."
+                if name == "fy2026_post_closing_nine_month_lender_ebitda"
+                else "Scenario output; no refinancing proceeds assumed."
+            )
+            add("scenario", name, scenario, cap[field], units, "approved_prior_phase_model_output", "data/phase8/processed/SCENARIO_CAPTURE_RESULTS.csv", cap["capture_id"], "approved_upstream", limitations, horizon, basis)
         for name, field in (
             ("first_warning", "first_warning_date"),
             ("first_breach", "first_breach_date"),
@@ -513,6 +529,37 @@ def committee_metrics() -> list[dict[str, str]]:
         "owner_reviewed", "Selected is lower only because the conditional $15m non-debt source exceeds assumed $10m refinancing fees; no debt substitution is permitted.",
         HYPOTHETICAL_CLOSING, "same_date_projected_closing_difference",
     )
+
+    # Keep the originally disclosed historical cash-paid-interest amounts and the
+    # resulting coverage diagnostic separate from forecast paid-or-payable
+    # coverage. Appending these records preserves the identifiers of the existing
+    # committee metrics while making the supplemental evidence available to every
+    # Phase 10 consumer.
+    for year in ("FY2024", "FY2025"):
+        paid = first(historical, fiscal_year=year, metric_name="cash_interest_paid_disclosed")
+        add(
+            "historical", "cash_interest_paid_disclosed", year, paid["value"],
+            "USD_millions", "approved_prior_phase_reported_fact",
+            "data/phase2/processed/historical_spread.csv", paid["source_ids"],
+            "approved_upstream",
+            "Historical cash paid from the original annual-report disclosure; already reflected in US-GAAP CFO and not a closing-LTM or contractual paid-or-payable denominator.",
+            year, "annual_fiscal_period_cash_paid",
+        )
+        coverage = first(
+            credit,
+            fiscal_year=year,
+            metric_name="historical_lender_ebitda_to_disclosed_cash_interest_paid",
+        )
+        add(
+            "historical", "historical_lender_ebitda_to_disclosed_cash_interest_paid",
+            year, coverage["value"], "turns", "approved_prior_phase_calculation",
+            "data/phase2/processed/historical_credit_metrics.csv",
+            ";".join(dict.fromkeys(
+                item for field in (coverage["source_ids"], coverage["input_ids"])
+                for item in field.split(";") if item
+            )), "approved_upstream",
+            coverage["notes"], year, "annual_historical_cash_paid_diagnostic",
+        )
     return rows
 
 
@@ -601,8 +648,8 @@ def conditions_and_monitoring() -> list[dict[str, str]]:
         ("monitoring_requirement", "Monthly integration, margin, and operating package", "Volume/price/mix, gross margin, plant service, synergies, restructuring cash, and maintenance capex.", "Five-to-ten-business-day action plan on warning.", "MON-001:MON-007;MON-020:MON-022"),
         ("monitoring_requirement", "Control-remediation evidence", "Milestones, testing results, audit-committee oversight, and auditor updates for the cash-flow control weakness.", "Reporting exception, enhanced controls, or default analysis.", "CP-021;MON-019"),
         ("analyst_warning", "Gross leverage warning", "Inclusive 3.25x / 3.00x / 2.75x schedule with zero cash netting.", "Suspend repurchases, monthly reporting, and 10-business-day debt-reduction plan.", "MON-015"),
-        ("analyst_warning", "Cash-interest coverage warning", "Below 3.50x; proposed covenant is below 3.00x.", "Revised forecast and amendment/waiver planning before breach.", "MON-016"),
-        ("analyst_warning", "Usable-liquidity warning", "Below $75m; proposed covenant is below $50m.", "Immediate 13-week cash forecast and corrective plan.", "MON-012"),
+        ("analyst_warning", "Cash-interest coverage warning", "At or below 3.50x; proposed covenant is below 3.00x.", "Revised forecast and amendment/waiver planning before breach.", "MON-016"),
+        ("analyst_warning", "Usable-liquidity warning", "At or below $75m; proposed covenant is below $50m.", "Immediate 13-week cash forecast and corrective plan.", "MON-012"),
         ("unresolved_diligence", "Official covenant compliance", "Final executed definitions and borrower certificates are unavailable publicly.", "Remain N/D; do not claim compliance.", "P7CP-001:P7CP-017"),
         ("unresolved_diligence", "Official recovery", "Complete guarantor, collateral, priority, appraisal, access, and claims evidence is absent.", "Remain N/D; sensitivities are alternatives only.", "P9FRA-001"),
         ("monitoring_requirement", "Maturity-refinancing strategy", "Documented plan refreshed over facility life; start at least 24 months before 2031 maturity and escalate at 12 months without executable financing.", "Watchlist and senior credit escalation; no refinancing assumed.", "MON-026"),
@@ -737,7 +784,7 @@ The central operating issue is gross-margin and plant execution. FY2025's improv
 
 FY2024 revenue / operating income were {m('revenue', 'FY2024')} / {m('operating_income', 'FY2024')}; FY2025 were {m('revenue', 'FY2025')} / {m('operating_income', 'FY2025')}. FY2025's GAAP loss includes the impairment and is not the same as recurring cash capacity. FY2024/FY2025 unadjusted EBITDA was {m('unadjusted_ebitda', 'FY2024')} / {m('unadjusted_ebitda', 'FY2025')}; owner-reviewed lender-base EBITDA was {m('lender_base_ebitda', 'FY2024')} / {m('lender_base_ebitda', 'FY2025')}. Contractual EBITDA remains an unofficial, partial public-information reconstruction. [P10M-001:P10M-016]
 
-FY2025 CFO / FCF improved to {m('cash_flow_from_operations', 'FY2025')} / {m('free_cash_flow', 'FY2025')}, or {m('cfo_to_provisional_lender_normalized_ebitda', 'FY2025')} / {m('fcf_to_provisional_lender_normalized_ebitda', 'FY2025')} of lender-base EBITDA, versus FY2024 conversion of {m('cfo_to_provisional_lender_normalized_ebitda', 'FY2024')} / {m('fcf_to_provisional_lender_normalized_ebitda', 'FY2024')}. EBITDA addbacks do not reverse cash outflows, and the composite FY2025 adjustment remains unresolved for lender credit. [P10R-001; P10R-002]
+FY2025 CFO / FCF improved to {m('cash_flow_from_operations', 'FY2025')} / {m('free_cash_flow', 'FY2025')}, or {m('cfo_to_provisional_lender_normalized_ebitda', 'FY2025')} / {m('fcf_to_provisional_lender_normalized_ebitda', 'FY2025')} of lender-base EBITDA, versus FY2024 conversion of {m('cfo_to_provisional_lender_normalized_ebitda', 'FY2024')} / {m('fcf_to_provisional_lender_normalized_ebitda', 'FY2024')}. Disclosed historical cash interest paid was {m('cash_interest_paid_disclosed', 'FY2024')} / {m('cash_interest_paid_disclosed', 'FY2025')}; lender-base EBITDA divided by those disclosed cash-paid amounts was {m('historical_lender_ebitda_to_disclosed_cash_interest_paid', 'FY2024')} / {m('historical_lender_ebitda_to_disclosed_cash_interest_paid', 'FY2025')}. This is a historical diagnostic only: it is not closing-LTM coverage, does not replace the modeled paid-or-payable definition, and cash interest is not deducted from CFO a second time. EBITDA addbacks do not reverse cash outflows, and the composite FY2025 adjustment remains unresolved for lender credit. [P10R-001; P10R-002]
 
 ## 5. Debt, legal structure, and liquidity
 
@@ -747,13 +794,13 @@ Public evidence does not complete the post-Tyman guarantor roster, eligible-coll
 
 ## 6. Base repayment and refinancing
 
-FY2026 annual lender EBITDA is {m('fy2026_lender_ebitda', 'BASE')}. Cumulative from February 1, 2026 through January 31, 2031, modeled operating cash / CFADS are {m('modeled_operating_cash', 'BASE')} / {m('cfads', 'BASE')}; cumulative cash interest, scheduled principal, and ECF sweep over that same model period are {m('cash_interest', 'BASE')}, {m('scheduled_principal', 'BASE')}, and {m('ecf_sweep_realized', 'BASE')}. Minimum cash-interest coverage over the forecast is {m('minimum_cash_interest_coverage', 'BASE')}; minimum all-in liquidity over the forecast, including the January 31, 2026 opening position, is {m('all_in_minimum_liquidity', 'BASE')}. These are modeled public-information outputs, not management guidance. [P10M scenario records]
+FY2026 post-closing nine-month lender EBITDA from February 1 through October 31, 2026 is {m('fy2026_post_closing_nine_month_lender_ebitda', 'BASE')}; it excludes the pre-closing first quarter and is not an annual figure. Cumulative from February 1, 2026 through January 31, 2031, modeled operating cash / CFADS are {m('modeled_operating_cash', 'BASE')} / {m('cfads', 'BASE')}; cumulative cash interest, scheduled principal, and ECF sweep over that same model period are {m('cash_interest', 'BASE')}, {m('scheduled_principal', 'BASE')}, and {m('ecf_sweep_realized', 'BASE')}. Minimum cash-interest coverage over the forecast is {m('minimum_cash_interest_coverage', 'BASE')}; minimum all-in liquidity over the forecast, including the January 31, 2026 opening position, is {m('all_in_minimum_liquidity', 'BASE')}. These are modeled public-information outputs, not management guidance. [P10M scenario records]
 
 At the common July 31, 2029 horizon, selected total funded debt is {m('selected_common_horizon_ending_debt', '2029-07-31')}. At the later January 31, 2031 selected maturity, the unsupported bank-debt gap is {m('unsupported_maturity_gap', 'BASE')}. Accessible cash and undrawn, legally drawable revolving capacity provide timing and liquidity support only. Drawing the revolver is not repayment of consolidated debt; it increases or reallocates funded debt. Future refinancing is an unresolved, separately underwritten maturity dependency, not secondary repayment, and no takeout proceeds are assumed. A maturity plan must begin at least 24 months before maturity and escalate at 12 months without an executable solution. [P10CM-026]
 
 ## 7. Downside and covenant intervention
 
-Moderate unmitigated FY2026 annual EBITDA is {m('fy2026_lender_ebitda', 'MODERATE_UNMITIGATED')}; maximum quarterly-test leverage / minimum coverage over the forecast are {m('maximum_quarterly_test_leverage', 'MODERATE_UNMITIGATED')} / {m('minimum_cash_interest_coverage', 'MODERATE_UNMITIGATED')}. Moderate mitigated maximum quarterly-test leverage / minimum coverage are {m('maximum_quarterly_test_leverage', 'MODERATE_MITIGATED')} / {m('minimum_cash_interest_coverage', 'MODERATE_MITIGATED')}. Both paths warn and breach on October 31, 2026; mitigation does not restore leverage covenant compliance. Minimum all-in liquidity over the forecast remains positive at {m('all_in_minimum_liquidity', 'MODERATE_UNMITIGATED')} / {m('all_in_minimum_liquidity', 'MODERATE_MITIGATED')}, and neither modeled path reaches liquidity exhaustion or payment failure. No automatic waiver is assumed. January 31, 2031 bank-debt gaps are {m('unsupported_maturity_gap', 'MODERATE_UNMITIGATED')} / {m('unsupported_maturity_gap', 'MODERATE_MITIGATED')}. [P10M moderate paths]
+Moderate unmitigated FY2026 post-closing nine-month EBITDA from February 1 through October 31, 2026 is {m('fy2026_post_closing_nine_month_lender_ebitda', 'MODERATE_UNMITIGATED')}; it is not an annual figure. Maximum quarterly-test leverage / minimum coverage over the forecast are {m('maximum_quarterly_test_leverage', 'MODERATE_UNMITIGATED')} / {m('minimum_cash_interest_coverage', 'MODERATE_UNMITIGATED')}. Moderate mitigated maximum quarterly-test leverage / minimum coverage are {m('maximum_quarterly_test_leverage', 'MODERATE_MITIGATED')} / {m('minimum_cash_interest_coverage', 'MODERATE_MITIGATED')}. Both paths warn and breach on October 31, 2026; mitigation does not restore leverage covenant compliance. Minimum all-in liquidity over the forecast remains positive at {m('all_in_minimum_liquidity', 'MODERATE_UNMITIGATED')} / {m('all_in_minimum_liquidity', 'MODERATE_MITIGATED')}, and neither modeled path reaches liquidity exhaustion or payment failure. No automatic waiver is assumed. January 31, 2031 bank-debt gaps are {m('unsupported_maturity_gap', 'MODERATE_UNMITIGATED')} / {m('unsupported_maturity_gap', 'MODERATE_MITIGATED')}. [P10M moderate paths]
 
 Severe unmitigated reaches warning in April 2026, breach in October 2026, zero usable liquidity in July 2027, and mandatory cash-interest failure on December 31, 2027. Maximum quarterly-test leverage / minimum coverage are {m('maximum_quarterly_test_leverage', 'SEVERE_UNMITIGATED')} / {m('minimum_cash_interest_coverage', 'SEVERE_UNMITIGATED')}; the maturity gap is {m('unsupported_maturity_gap', 'SEVERE_UNMITIGATED')}. Severe mitigation delays but does not eliminate failure and leaves {m('unsupported_maturity_gap', 'SEVERE_MITIGATED')}. Lower debt caused by curtailed borrowing or unpaid obligations is not improvement. [P10M-066:P10M-074; P10CM-021:P10CM-023]
 
@@ -787,6 +834,8 @@ The response is not faster deleveraging or moderate covenant survival. If fully 
 | Lender-base EBITDA | {m('lender_base_ebitda', 'FY2024')} | {m('lender_base_ebitda', 'FY2025')} |
 | CFO | {m('cash_flow_from_operations', 'FY2024')} | {m('cash_flow_from_operations', 'FY2025')} |
 | FCF | {m('free_cash_flow', 'FY2024')} | {m('free_cash_flow', 'FY2025')} |
+| Disclosed cash interest paid | {m('cash_interest_paid_disclosed', 'FY2024')} | {m('cash_interest_paid_disclosed', 'FY2025')} |
+| Lender EBITDA / disclosed cash interest paid | {m('historical_lender_ebitda_to_disclosed_cash_interest_paid', 'FY2024')} | {m('historical_lender_ebitda_to_disclosed_cash_interest_paid', 'FY2025')} |
 
 ### Appendix B — scenario and maturity comparison
 
@@ -827,7 +876,7 @@ Primary repayment is recurring operating cash available for debt service after o
 
 | Metric | Result |
 |---|---:|
-| FY2025 lender-base EBITDA | {d('lender_base_ebitda', 'FY2025')} |
+| FY2025 lender-base EBITDA / historical cash-paid coverage | {d('lender_base_ebitda', 'FY2025')} / {d('historical_lender_ebitda_to_disclosed_cash_interest_paid', 'FY2025')} |
 | Opening funded debt / gross leverage | {d('opening_funded_debt', 'selected')} / {d('opening_gross_leverage', 'selected')} |
 | Base minimum all-in liquidity over forecast incl. opening | {d('base_all_in_liquidity', 'selected')} |
 | Base minimum cash-interest coverage over forecast | {d('minimum_cash_interest_coverage', 'BASE')} |
@@ -864,7 +913,7 @@ Phase 10 converts the approved Phase 0-9 record into a lender decision package w
 
 The workflow reads {len(SOURCE_INPUTS)} approved prior-phase artifacts, preserves their fact/calculation/term/judgment classifications, and writes {len(metrics)} committee metrics with direct lineage and explicit measurement horizons. All 18 recommendation judgments are separately recorded as `{RECOMMENDATION_STATUS}`. Owner review does not transform assumptions into facts or open conditions into completed diligence. Conditions remain separated into conditions precedent, ongoing covenants, monitoring requirements, analyst warnings, and unresolved diligence.
 
-The memo and brief are generated from the same registers as the workbook summary. The system Python orchestrates data and validation; the bundled Python 3.12 runtime supplies ReportLab 4.4.9 and Pillow 12.3.0 for PDF/chart rendering. The existing artifact-tool and LibreOffice/Excel validation chain is retained for the workbook. No live network access is used.
+The memo and brief are generated from the same registers as the workbook summary. The system Python orchestrates data and validation; the bundled Python 3.12 runtime supplies ReportLab 4.4.9 and Pillow 12.3.0 for PDF/chart rendering. The existing artifact-tool and LibreOffice/Excel validation chain is retained for the workbook. Phase 8 and Phase 9 retain evidence tied to their own generated artifacts; Phase 10 writes separate complete Phase 8 and Phase 9 dynamic-test registries tied to the final workbook, so final-artifact testing cannot overwrite or mislabel the stage-specific records. No live network access is used.
 
 The repository-root `.gitattributes` classifies PDF deliverables as binary with `*.pdf -diff -merge -text`. This portable repository rule prevents system-level text-conversion attributes from treating valid PDF object and cross-reference syntax as text while preserving ordinary whitespace checks for source and data files.
 
@@ -968,13 +1017,15 @@ def run_artifact_tool(mode: str, baseline: Path, preview_dir: Path | None = None
 
 
 def phase9_baseline(path: Path) -> None:
-    with path.open("wb") as handle:
-        result = subprocess.run(
-            ["git", "show", f"{APPROVED_PHASE9_COMMIT}:model/Quanex_Credit_Underwriting.xlsx"],
-            cwd=ROOT, stdout=handle,
-        )
-    if result.returncode:
-        raise Phase10Error("Unable to extract approved Phase 9 workbook baseline")
+    """Preserve the currently regenerated Phase 9 workbook for the P10 overlay.
+
+    The approved Phase 9 commit remains a lineage checkpoint, but extracting
+    its old binary here would overwrite later corrections made by the Phase 8
+    and Phase 9 generators in the same release build.
+    """
+    if not MODEL.is_file():
+        raise Phase10Error("Current regenerated Phase 9 workbook baseline is absent")
+    shutil.copy2(MODEL, path)
 
 
 def build_workbook() -> None:
@@ -991,7 +1042,61 @@ def canonicalize_workbook() -> dict[str, object]:
         shutil.copy2(MODEL, candidate)
         report = phase9.run_libreoffice("inspect", candidate)
         shutil.copy2(candidate, MODEL)
+        canonicalize_xlsx(MODEL)
     return report
+
+
+def run_final_artifact_dynamic_evidence() -> tuple[dict[str, object], dict[str, object]]:
+    """Test the final workbook without overwriting stage-specific evidence."""
+    stage_paths = (phase8.DYNAMIC_EVIDENCE, phase9.DYNAMIC_EVIDENCE)
+    stage_before = {
+        path: path.read_bytes() if path.is_file() else None
+        for path in stage_paths
+    }
+    phase8_report = phase8.dynamic(
+        evidence_path=PHASE8_FINAL_DYNAMIC_EVIDENCE,
+        tested_artifact=PHASE8_FINAL_DYNAMIC_ARTIFACT,
+    )
+    phase9_report = phase9.dynamic(
+        evidence_path=PHASE9_FINAL_DYNAMIC_EVIDENCE,
+        tested_artifact=PHASE9_FINAL_DYNAMIC_ARTIFACT,
+    )
+    stage_after = {
+        path: path.read_bytes() if path.is_file() else None
+        for path in stage_paths
+    }
+    if stage_after != stage_before:
+        raise Phase10Error("Final-workbook testing overwrote Phase 8/9 stage evidence")
+    return phase8_report, phase9_report
+
+
+def final_artifact_dynamic_evidence_state() -> dict[str, tuple[str, str]]:
+    """Validate complete Phase 10-owned evidence against the current workbook."""
+    return {
+        "phase8": phase8.dynamic_evidence_state(
+            evidence_path=PHASE8_FINAL_DYNAMIC_EVIDENCE,
+            tested_artifact=PHASE8_FINAL_DYNAMIC_ARTIFACT,
+        ),
+        "phase9": phase9.dynamic_evidence_state(
+            evidence_path=PHASE9_FINAL_DYNAMIC_EVIDENCE,
+            tested_artifact=PHASE9_FINAL_DYNAMIC_ARTIFACT,
+        ),
+    }
+
+
+def require_final_artifact_dynamic_evidence() -> dict[str, tuple[str, str]]:
+    """Fail loudly unless both final-artifact registries are current and complete."""
+    states = final_artifact_dynamic_evidence_state()
+    failures = [
+        f"{phase_name}={status} ({observed})"
+        for phase_name, (status, observed) in states.items()
+        if status != "PASS"
+    ]
+    if failures:
+        raise Phase10Error(
+            "Phase 10 final-workbook dynamic evidence failed: " + "; ".join(failures)
+        )
+    return states
 
 
 def build_pdfs() -> None:
@@ -1020,25 +1125,13 @@ def pdf_metadata() -> dict[str, object]:
 
 
 def normalized_workbook_fingerprint() -> str:
-    excluded = {"docProps/core.xml", "xl/calcChain.xml", "xl/sharedStrings.xml"}
-    digest = hashlib.sha256()
-    digest.update(source_signature().encode("ascii"))
-    digest.update((ROOT / "scripts" / "build-phase10.mjs").read_bytes())
-    with zipfile.ZipFile(MODEL) as archive:
-        for name in sorted(archive.namelist()):
-            if name in excluded or (name.startswith("xl/drawings/drawing") and name.endswith(".xml")):
-                continue
-            data = archive.read(name)
-            if (name.startswith("xl/charts/chart") or name.startswith("xl/drawings/charts/chart")) and name.endswith(".xml"):
-                axis_ids: dict[bytes, bytes] = {}
-                def normalize(match: re.Match[bytes]) -> bytes:
-                    original = match.group(2)
-                    axis_ids.setdefault(original, str(len(axis_ids) + 1).encode("ascii"))
-                    return match.group(1) + axis_ids[original] + match.group(3)
-                data = re.sub(rb'(<c:(?:axId|crossAx) val=")(\d+)("/>)', normalize, data)
-            digest.update(name.encode("utf-8"))
-            digest.update(data)
-    return digest.hexdigest()
+    return semantic_workbook_fingerprint(
+        MODEL,
+        prefix_parts=(
+            source_signature().encode("ascii"),
+            (ROOT / "scripts" / "build-phase10.mjs").read_bytes(),
+        ),
+    )
 
 
 NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main", "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships"}
@@ -1107,6 +1200,7 @@ def consistency_results() -> list[dict[str, str]]:
         add("cutoff", f"{artifact_name} cutoff", "December 15, 2025" in text, "December 15, 2025" in text, True)
     required_displays = [
         ("lender_base_ebitda", "FY2025"), ("opening_funded_debt", "selected"),
+        ("historical_lender_ebitda_to_disclosed_cash_interest_paid", "FY2025"),
         ("opening_gross_leverage", "selected"), ("base_all_in_liquidity", "selected"),
         ("unsupported_maturity_gap", "BASE"), ("unsupported_maturity_gap", "MODERATE_UNMITIGATED"),
         ("unsupported_maturity_gap", "SEVERE_UNMITIGATED"),
@@ -1158,6 +1252,7 @@ def validate(
         engine_report = libreoffice_report_on_copy("inspect")
     wb = workbook_metadata()
     consistency = consistency_results()
+    final_dynamic = final_artifact_dynamic_evidence_state()
     if write_outputs:
         write_csv(PROCESSED / "DELIVERABLE_CONSISTENCY_RESULTS.csv", consistency)
     controls: list[dict[str, object]] = []
@@ -1169,7 +1264,13 @@ def validate(
         })
 
     checkpoint = read_csv(RAW / "STARTING_CHECKPOINT.csv")[0]
-    add("checkpoint", "approved Phase 9 lineage", approved_lineage(), git_head(), APPROVED_PHASE9_COMMIT)
+    current_head = git_head()
+    approved_ancestry = approved_lineage(current_head)
+    add(
+        "checkpoint", "approved Phase 9 lineage", approved_ancestry,
+        "approved ancestor confirmed" if approved_ancestry else current_head,
+        f"{APPROVED_PHASE9_COMMIT} is an ancestor",
+    )
     add("checkpoint", "recorded starting checkpoint", checkpoint["local_head"] == APPROVED_PHASE9_COMMIT, checkpoint["local_head"], APPROVED_PHASE9_COMMIT)
     add("cutoff", "source ledger cutoff", all(r["cutoff_status"] == "within_cutoff" for r in ledger), sum(r["cutoff_status"] != "within_cutoff" for r in ledger), 0)
     add("lineage", "source hashes current", all(sha256(ROOT / r["source_path"]) == r["sha256"] for r in ledger), "checked", "all match")
@@ -1182,6 +1283,14 @@ def validate(
     add("data", "committee metric count", len(metrics) >= 130, len(metrics), ">=130")
     add("data", "metric identifiers unique", len({r["metric_id"] for r in metrics}) == len(metrics), len({r["metric_id"] for r in metrics}), len(metrics))
     add("data", "all metric lineage complete", all(r["source_path"] and r["classification"] for r in metrics), "checked", "complete")
+    for phase_name, (status, observed) in final_dynamic.items():
+        add(
+            "workbook",
+            f"Phase 10 final artifact {phase_name} dynamic evidence",
+            status == "PASS",
+            f"{status}: {observed}",
+            "PASS; complete exact registry tied to the current final workbook",
+        )
     ix = metric_index(metrics)
     anchors = {
         ("lender_base_ebitda", "FY2024"): Decimal("179.358"),
@@ -1234,7 +1343,7 @@ def validate(
     add("documents", "manual rendered-page QA complete", len(qa) == 12 and all(r["status"] == "PASS" for r in qa), len(qa), "12 PASS rows")
     add("workbook", "14 approved sheets", wb["sheet_count"] == 14, wb["sheet_count"], 14)
     add("workbook", "seven native charts", wb["chart_count"] == 7, wb["chart_count"], 7)
-    add("workbook", "formula count preserved", wb["formula_count"] == 2897, wb["formula_count"], 2897)
+    add("workbook", "formula count preserved", wb["formula_count"] == 3473, wb["formula_count"], 3473)
     add("workbook", "saved Base", wb["saved_scenario"] == "Base", wb["saved_scenario"], "Base")
     add("workbook", "no external links", wb["external_links"] == 0, wb["external_links"], 0)
     add("workbook", "no formula errors", wb["formula_errors"] == 0, wb["formula_errors"], 0)
@@ -1247,12 +1356,14 @@ def validate(
     add("workbook", "common horizon visible", "$495.368m" in xlsx_cell_text("Credit Summary", "I52") and "$514.754m" in xlsx_cell_text("Credit Summary", "I52"), xlsx_cell_text("Credit Summary", "I52"), "all three common-horizon balances")
     add("workbook", "official recovery N/D", N_D in xlsx_cell_text("Credit Summary", "I55"), xlsx_cell_text("Credit Summary", "I55"), N_D)
     add("scope", "no Phase 12 implementation", not (ROOT / "data" / "phase12").exists() and not (ROOT / "docs" / "phase-12").exists() and not (ROOT / "scripts" / "phase12.py").exists(), "checked", "absent")
-    allowed_exact = {
+    allowed_static = {
         ".gitattributes", "README.md", "model/Quanex_Credit_Underwriting.xlsx", "scripts/phase4.py", "scripts/phase5.py",
-        "scripts/phase6.py", "scripts/phase7.py", "scripts/phase8.py", "scripts/phase9.py", "scripts/phase10.py", "scripts/phase11.py",
-        "scripts/build-phase8.mjs", "scripts/build-phase10.mjs", "scripts/recalculate-phase8.py", "scripts/render-phase10.py",
-        "scripts/render-phase11.py", "tests/test_phase8.py", "tests/test_phase9.py", "tests/test_phase10.py",
-        "tests/test_phase11.py", "tests/test_audit_remediation.py",
+        "scripts/phase2.py", "scripts/phase6.py", "scripts/phase7.py", "scripts/phase8.py", "scripts/phase9.py", "scripts/phase10.py", "scripts/phase11.py",
+        "scripts/build-phase8.mjs", "scripts/build-phase10.mjs", "scripts/recalculate-phase8.py", "scripts/recalculate-phase9.py", "scripts/render-phase10.py",
+        "scripts/validate-phase8-excel.ps1", "scripts/validate-phase9-excel.ps1",
+        "scripts/render-phase11.py", "scripts/remediation_controls.py", "scripts/workbook_semantics.py", "scripts/xlsx_package.py", "tests/test_phase2.py", "tests/test_phase6.py", "tests/test_phase7.py",
+        "tests/test_phase8.py", "tests/test_phase9.py", "tests/test_phase10.py", "tests/test_phase11.py",
+        "tests/test_audit_remediation.py", "tests/test_workbook_semantics.py", "tests/test_xlsx_package.py",
         "docs/phase-7/COVENANT_DESIGN.md", "docs/phase-8/METHODOLOGY.md", "docs/phase-8/CALCULATION_VALIDATION.md",
         "docs/phase-8/SOURCE_LEDGER.csv", "docs/phase-8/WORKBOOK_GUIDE.md",
         "docs/phase-9/METHODOLOGY.md",
@@ -1263,6 +1374,9 @@ def validate(
         "data/phase8/processed/DYNAMIC_TEST_EVIDENCE.csv", "data/phase9/raw/STARTING_CHECKPOINT.csv",
         "data/phase9/processed/DYNAMIC_RECOVERY_TEST_EVIDENCE.csv", "data/phase9/processed/VALIDATION_RESULTS.csv",
     }
+    allowed_exact = (
+        allowed_static - set(PHASE10_PRIOR_AUTHORIZED_SHA256)
+    ) | set(authorized_prior_paths())
     paths = changed_paths()
     unexpected = [p for p in paths if p not in allowed_exact and not p.startswith("data/phase10/") and not p.startswith("docs/phase-10/") and not p.startswith("data/phase11/") and not p.startswith("docs/phase-11/") and not p.startswith("reports/")]
     add("repository", "changed paths are Phase 10 scoped", not unexpected, ";".join(unexpected), "none")
@@ -1280,24 +1394,17 @@ def validate(
         set(pdf_attribute_result) == expected_pdf_attributes,
         ";".join(pdf_attribute_result), ";".join(sorted(expected_pdf_attributes)),
     )
-    prior = subprocess.run([
-        "git", "diff", "--name-only", "--", "data/phase1", "data/phase2", "data/phase3", "data/phase4",
-        "data/phase5", "data/phase6", "data/phase7", "data/phase8", "data/phase9", "docs/phase-0",
-        "docs/phase-1", "docs/phase-2", "docs/phase-3", "docs/phase-4", "docs/phase-5", "docs/phase-6",
-        "docs/phase-7", "docs/phase-8", "docs/phase-9",
-    ], cwd=ROOT, text=True, capture_output=True, check=True).stdout.splitlines()
-    allowed_prior = {
-        "docs/phase-7/COVENANT_DESIGN.md", "docs/phase-8/METHODOLOGY.md", "docs/phase-8/CALCULATION_VALIDATION.md",
-        "docs/phase-8/SOURCE_LEDGER.csv", "docs/phase-8/WORKBOOK_GUIDE.md",
-        "docs/phase-9/METHODOLOGY.md",
-        "data/phase8/raw/STARTING_CHECKPOINT.csv", "data/phase8/processed/SCENARIO_CAPTURE_RESULTS.csv",
-        "data/phase8/processed/WORKBOOK_MAP.csv", "data/phase8/processed/WORKBOOK_VALIDATION_RESULTS.csv",
-        "data/phase8/processed/FORMULA_PARITY_RESULTS.csv", "data/phase8/processed/OPENING_DEBT_COMPARISON.csv",
-        "data/phase8/processed/TERM_SIZING_SENSITIVITY.csv", "data/phase8/processed/AMORTIZATION_SENSITIVITY_RESULTS.csv",
-        "data/phase8/processed/DYNAMIC_TEST_EVIDENCE.csv", "data/phase9/raw/STARTING_CHECKPOINT.csv",
-        "data/phase9/processed/DYNAMIC_RECOVERY_TEST_EVIDENCE.csv", "data/phase9/processed/VALIDATION_RESULTS.csv",
-    }
-    unexpected_prior = [path for path in prior if path and path.replace("\\", "/") not in allowed_prior]
+    prior_prefixes = tuple(
+        [f"data/phase{phase}" for phase in range(1, 10)]
+        + [f"docs/phase-{phase}" for phase in range(0, 10)]
+    )
+    prior = [
+        path for path in paths
+        if any(path == prefix or path.startswith(prefix + "/") for prefix in prior_prefixes)
+    ]
+    unexpected_prior = unapproved_paths(
+        ROOT, prior, PHASE10_PRIOR_AUTHORIZED_SHA256,
+    )
     add("repository", "prior analytical changes limited to audit remediation", not unexpected_prior, ";".join(unexpected_prior), "none")
     prohibited = re.compile(r"(?i)(api[_-]?key|secret\s*=|password\s*=|bearer\s+[A-Za-z0-9])")
     text_paths = [ROOT / p for p in paths if (ROOT / p).is_file() and (ROOT / p).suffix.lower() in {".py", ".mjs", ".md", ".csv", ".json", ".ps1"}]
@@ -1326,10 +1433,14 @@ def all_workflow() -> dict[str, object]:
     payload = build_data()
     build_workbook()
     engine = canonicalize_workbook()
-    phase8_dynamic = phase8.dynamic()
-    phase9_dynamic = phase9.dynamic()
-    phase8.validate_workbook(phase8.run_libreoffice("inspect"), require_dynamic=True)
-    phase9.validate(phase9.run_libreoffice("inspect"), require_dynamic=True)
+    phase8_dynamic, phase9_dynamic = run_final_artifact_dynamic_evidence()
+    require_final_artifact_dynamic_evidence()
+    # Both prior-stage validators create and inspect disposable workbook copies
+    # when no engine report is supplied.  Passing the authoritative workbook to
+    # their saving LibreOffice harnesses here would mutate the just-tested Phase
+    # 10 package and immediately stale the final-artifact evidence.
+    phase8.validate_workbook(require_dynamic=True, write_outputs=False)
+    phase9.validate(require_dynamic=True, write_outputs=False)
     build_pdfs()
     controls = validate(engine)
     wb = workbook_metadata()
@@ -1356,29 +1467,67 @@ def _test_count(output: str) -> int:
     return int(match.group(1))
 
 
+def run_fresh_validation(
+    phase_name: str,
+    command: list[str],
+    owned_outputs: tuple[str, ...] = (),
+) -> tuple[str, list[dict[str, str]]]:
+    """Run a validator and compare its outputs before any later command runs.
+
+    A current release validator must reproduce its committed control records.
+    Historical snapshots, if introduced later, must be classified outside this
+    fresh-output list rather than restored over a discrepancy.
+    """
+    before = {
+        relative: sha256(ROOT / relative) if (ROOT / relative).is_file() else "MISSING"
+        for relative in owned_outputs
+    }
+    output = run_command(command)
+    records: list[dict[str, str]] = []
+    for relative in owned_outputs:
+        after = sha256(ROOT / relative) if (ROOT / relative).is_file() else "MISSING"
+        status = "MATCH" if after == before[relative] else "DIFFERS"
+        records.append({
+            "phase": phase_name,
+            "path": relative,
+            "classification": "FRESH_REPRODUCED_CONTROL",
+            "before_sha256": before[relative],
+            "fresh_sha256": after,
+            "status": status,
+        })
+    differences = [row for row in records if row["status"] != "MATCH"]
+    if differences:
+        detail = ", ".join(
+            f"{row['path']} {row['before_sha256']} -> {row['fresh_sha256']}"
+            for row in differences
+        )
+        raise Phase10Error(f"Fresh {phase_name} validation output differs: {detail}")
+    return output, records
+
+
 def verify_isolated() -> dict[str, object]:
     """Run every potentially mutating gate inside a disposable repository clone."""
-    preserved = {(ROOT / relative): (ROOT / relative).read_bytes() for relative in repository_paths()}
     validation_outputs: dict[str, str] = {}
-    validation_outputs["phase0"] = run_command([
+    fresh_records: list[dict[str, str]] = []
+    validation_outputs["phase0"], records = run_fresh_validation("phase0", [
         "powershell", "-ExecutionPolicy", "Bypass", "-NoProfile", "-File",
         str(ROOT / "scripts" / "validate-phase0.ps1"),
     ])
+    fresh_records.extend(records)
     for phase in range(1, 8):
-        validation_outputs[f"phase{phase}"] = run_command([
+        validation_outputs[f"phase{phase}"], records = run_fresh_validation(f"phase{phase}", [
             sys.executable, "-B", str(ROOT / "scripts" / f"phase{phase}.py"), "validate",
         ])
+        fresh_records.extend(records)
 
-    # Prior-phase validation may refresh deterministic validation CSVs. Run it in
-    # the disposable clone and restore the clone baseline before Phase 10 checks.
-    validation_outputs["phase8"] = run_command([
+    validation_outputs["phase8"], records = run_fresh_validation("phase8", [
         sys.executable, "-B", str(ROOT / "scripts" / "phase8.py"), "validate",
     ])
-    validation_outputs["phase9"] = run_command([
+    fresh_records.extend(records)
+    validation_outputs["phase9"], records = run_fresh_validation("phase9", [
         sys.executable, "-B", str(ROOT / "scripts" / "phase9.py"), "validate",
     ])
-    for path, content in preserved.items():
-        path.write_bytes(content)
+    fresh_records.extend(records)
 
     lo_report = libreoffice_report_on_copy("inspect")
     controls = validate(lo_report, write_outputs=False)
@@ -1402,6 +1551,8 @@ def verify_isolated() -> dict[str, object]:
         "excel_phase9": json.loads(excel9).get("status"),
         "complete_tests": _test_count(full),
         "focused_tests": _test_count(focused),
+        "fresh_validation_records": fresh_records,
+        "preserved_snapshot_count": 0,
     }
 
 

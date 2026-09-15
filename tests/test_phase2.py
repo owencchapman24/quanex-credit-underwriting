@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import sys
+import tempfile
 import unittest
 from collections import defaultdict
 from datetime import datetime
@@ -25,6 +26,7 @@ class Phase2ValidationTests(unittest.TestCase):
         cls.decisions = phase2.read_csv(phase2.PHASE2_PROCESSED / "adjustment_decisions.csv")
         cls.metrics = phase2.read_csv(phase2.PHASE2_PROCESSED / "historical_credit_metrics.csv")
         cls.recons = phase2.read_csv(phase2.PHASE2_PROCESSED / "reconciliation_results.csv")
+        cls.supplemental = phase2.read_csv(phase2.PHASE2_RAW / "SUPPLEMENTAL_FACTS.csv")
         cls.values = phase2.spread_index(cls.spread)
 
     def test_01_five_year_period_coverage(self) -> None:
@@ -252,6 +254,54 @@ class Phase2ValidationTests(unittest.TestCase):
         self.assertEqual(stats["adjustments"], 11)
         self.assertEqual(stats["post_cutoff_sources"], 0)
         self.assertEqual(stats["owner_reviewed_adjustments"], 11)
+
+    def test_26a_historical_cash_paid_interest_is_source_backed_and_separate(self) -> None:
+        spread = {(row["fiscal_year"], row["metric_name"]): row for row in self.spread}
+        metrics = {(row["fiscal_year"], row["metric_name"]): row for row in self.metrics}
+        expected = {"FY2023": "5.737", "FY2024": "10.91", "FY2025": "52.63"}
+        metric_name = "historical_lender_ebitda_to_disclosed_cash_interest_paid"
+        for year, amount in expected.items():
+            row = spread[(year, "cash_interest_paid_disclosed")]
+            self.assertEqual(row["value"], amount)
+            self.assertEqual(row["source_ids"], "SRC-001")
+            diagnostic = metrics[(year, metric_name)]
+            self.assertEqual(diagnostic["denominator"], amount)
+            self.assertIn("historical", diagnostic["notes"].lower())
+            self.assertIn("not contractual", diagnostic["notes"].lower())
+        for year in ("FY2021", "FY2022"):
+            self.assertEqual(spread[(year, "cash_interest_paid_disclosed")]["status"], "not_determinable_not_zero")
+            self.assertEqual(metrics[(year, metric_name)]["display_value"], "N/D")
+
+    def test_26b_historical_interest_records_append_without_repurposing_lineage(self) -> None:
+        self.assertEqual(
+            [row["record_id"] for row in self.supplemental[-3:]],
+            ["S2R-0186", "S2R-0187", "S2R-0188"],
+        )
+        self.assertEqual(
+            [row["spread_id"] for row in self.spread[-5:]],
+            ["S2S-0396", "S2S-0397", "S2S-0398", "S2S-0399", "S2S-0400"],
+        )
+        self.assertEqual(
+            [row["metric_id"] for row in self.metrics[-5:]],
+            ["S2M-0141", "S2M-0142", "S2M-0143", "S2M-0144", "S2M-0145"],
+        )
+        existing_contractual = [
+            row for row in self.metrics if row["metric_name"] == "ebitda_to_cash_interest"
+        ]
+        self.assertEqual(
+            [row["metric_id"] for row in existing_contractual],
+            ["S2M-0023", "S2M-0051", "S2M-0079", "S2M-0107", "S2M-0135"],
+        )
+        self.assertTrue(all(row["display_value"] == "N/D" for row in existing_contractual))
+        self.assertTrue(all("not substituted" in row["notes"] for row in existing_contractual))
+
+    def test_26c_csv_writer_uses_canonical_lf_bytes(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="quanex-phase2-eol-") as folder:
+            output = Path(folder) / "sample.csv"
+            phase2.write_csv(output, [{"field": "value"}], ("field",))
+            content = output.read_bytes()
+        self.assertNotIn(b"\r\n", content)
+        self.assertEqual(content, b"field\nvalue\n")
 
     def test_27_owner_reviewed_base_and_cash_treatment(self) -> None:
         final = phase2.final_bridge_values(

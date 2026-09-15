@@ -52,5 +52,5 @@ P11V-050,repository,no absolute local paths,PASS,,none
 P11V-051,repository,no credentials,PASS,,none
 P11V-052,scope,Phase 12 absent,PASS,,none
 P11V-053,scope,dirty-tree changes match explicit overlay manifest,PASS,missing=[];unexpected=[],exact declared overlay
-P11V-054,scope,no inferred working-tree exceptions,PASS,92,clean tree or explicit overlay
+P11V-054,scope,no inferred working-tree exceptions,PASS,5,clean tree or explicit overlay
 P11V-055,git,nothing staged,PASS,,none

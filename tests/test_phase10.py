@@ -260,6 +260,7 @@ class Phase10DataTests(unittest.TestCase):
             ROOT / "data/phase10/raw/OWNER_REVIEW_DECISIONS.csv",
             ROOT / "data/phase10/processed/COMMITTEE_METRICS.csv",
             ROOT / "data/phase10/processed/CONDITIONS_AND_MONITORING.csv",
+            ROOT / "docs/phase-10/METHODOLOGY.md",
             ROOT / "reports/credit_memo.md",
             ROOT / "reports/committee_brief.md",
         ]

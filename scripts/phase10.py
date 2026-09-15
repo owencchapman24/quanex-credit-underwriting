@@ -919,17 +919,6 @@ The repository-root `.gitattributes` classifies PDF deliverables as binary with 
 
 The October 31, 2025 historical reference is $641.250m bank debt plus $62.619m retained lease/other debt, or $703.869m total funded debt. January 31, 2026 projected alternatives are compared separately at the same date: $732.517m existing, $742.517m reference, and $727.517m selected. Selected is $5.000m below projected existing only because the conditional $15m non-debt source exceeds assumed $10m fees. The July 31, 2029 common-horizon comparison uses total funded debt: $495.368m existing, $507.954m reference, and $514.754m selected. Ultimate gaps use bank debt and their contractual dates: $432.749m existing at August 1, 2029 and $340.948m reference / $324.780m selected at January 31, 2031. These measures are never conflated. Recovery methods remain alternatives. Official recovery and opening cash-interest coverage remain `N/D`. The decision remains a hypothetical public-information project recommendation, not an actual bank approval or commitment.
 """, encoding="utf-8")
-    # Preserve the approved post-PDF-classification artifact byte-for-byte.  That
-    # commit added the three-line Git-attribute paragraph with LF endings to an
-    # existing CRLF document; release reproduction must not silently normalize
-    # the already approved Phase 10 artifact.
-    methodology_path = DOCS / "METHODOLOGY.md"
-    methodology_lines = methodology_path.read_text(encoding="utf-8").splitlines()
-    methodology_path.write_bytes((
-        "".join(line + "\r\n" for line in methodology_lines[:6])
-        + "".join(line + "\n" for line in methodology_lines[6:9])
-        + "".join(line + "\r\n" for line in methodology_lines[9:])
-    ).encode("utf-8"))
     (DOCS / "DECISION_RATIONALE.md").write_text(f"""# Phase 10 decision rationale
 
 **Recommendation:** {RECOMMENDATION_DISPLAY}, owner-review status `{RECOMMENDATION_STATUS}`.
